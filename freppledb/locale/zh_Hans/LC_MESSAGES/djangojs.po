@@ -20,9 +20,9 @@ msgstr ""
 "Project-Id-Version: \n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2023-10-24 12:27+0200\n"
-"PO-Revision-Date: 2024-12-17 15:07+0100\n"
-"Last-Translator: Joao Ranita <jranita@frepple.com>\n"
-"Language-Team: frepple\n"
+"PO-Revision-Date: 2026-07-22 16:00+0800\n"
+"Last-Translator: wangxudongone-maker\n"
+"Language-Team: Chinese (Simplified)\n"
 "Language: zh_CN\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
@@ -46,12 +46,12 @@ msgstr "关闭"
 #: common/static/js/frepple.js:234 common/static/js/frepple.js:320
 #: input/static/operationplandetail/src/operationplandetailCtrl.js:350
 msgid "There are unsaved changes on this page."
-msgstr "此页面有未保存的变动。"
+msgstr "此页面有未保存的更改。"
 
 #: common/static/js/frepple.js:317
 #: input/static/operationplandetail/src/operationplandetailCtrl.js:347
 msgid "Save or cancel your changes first"
-msgstr "先保存或取消你的变动"
+msgstr "请先保存或取消更改"
 
 #: common/static/js/frepple.js:323 common/static/js/frepple.js:2397
 #: input/static/operationplandetail/src/operationplandetailCtrl.js:354
@@ -66,7 +66,7 @@ msgstr "返回页面"
 #: common/static/js/frepple.js:577
 #: input/static/operationplandetail/src/operationplandetailCtrl.js:427
 msgid "days early"
-msgstr "提早的天数"
+msgstr "提前天数"
 
 #: common/static/js/frepple.js:579
 #: input/static/operationplandetail/src/operationplandetailCtrl.js:429
@@ -77,7 +77,7 @@ msgstr "准时"
 #: input/static/operationplandetail/src/operationplandetailCtrl.js:432
 #: input/static/operationplandetail/src/operationplandetailCtrl.js:434
 msgid "days late"
-msgstr "延迟的天数"
+msgstr "延迟天数"
 
 #: common/static/js/frepple.js:780
 msgid "Selected options"
@@ -89,11 +89,11 @@ msgstr "可用的选项"
 
 #: common/static/js/frepple.js:825 forecast/static/forecast/src/forecast.js:936
 msgid "Selected Cross"
-msgstr "选定的交叉"
+msgstr "已选交叉维度"
 
 #: common/static/js/frepple.js:835 forecast/static/forecast/src/forecast.js:944
 msgid "Available Cross"
-msgstr "可用的交叉"
+msgstr "可用交叉维度"
 
 #: common/static/js/frepple.js:857
 msgid "Frozen columns"

@@ -233,8 +233,9 @@ LANGUAGES = (
     ("uk", _("Ukrainian")),
 )
 
-# Default language
-LANGUAGE_CODE = LANGUAGES[0][0] or "en"
+# Default language. The Chinese fork defaults to Simplified Chinese.
+# Set FREPPLE_LANGUAGE_CODE to any code in LANGUAGES to override it.
+LANGUAGE_CODE = os.environ.get("FREPPLE_LANGUAGE_CODE", "zh-hans")
 
 # The remember-me checkbox on the login page allows to keep a session cookie
 # active in your browser. The session will expire after the age configured

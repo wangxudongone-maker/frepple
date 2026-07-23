@@ -39,7 +39,7 @@ msgstr "%s 分配出 %s"
 #: freppledb/planningboard/static/planningboard/planningboard.html:1283
 #: freppledb/planningboard/static/planningboard/planningboard.html:1301
 msgid "Add to the graph"
-msgstr "添加到圖表"
+msgstr "添加到图表"
 
 #: freppledb/planningboard/static/planningboard/planningboard.html:1488
 msgid ""
@@ -91,7 +91,7 @@ msgstr "自动"
 
 #: freppledb/forecast/static/forecast/src/forecast.js:892
 msgid "Available Cross"
-msgstr "可用的交叉"
+msgstr "可用交叉维度"
 
 #: freppledb/forecast/static/forecast/src/forecast.js:902
 msgid "Cancel"
@@ -157,7 +157,7 @@ msgstr "先要保存更改吗?"
 #: freppledb/planningboard/static/planningboard/planningboard.html:591
 #: freppledb/planningboard/static/planningboard/planningboard.html:717
 msgid "Duplicate"
-msgstr "重複"
+msgstr "重复"
 
 #: freppledb/forecast/static/forecast/forecast.html:426
 msgid "Estimated forecast error"
@@ -312,7 +312,7 @@ msgstr "选择面板序列"
 
 #: freppledb/forecast/static/forecast/src/forecast.js:884
 msgid "Selected Cross"
-msgstr "选定的交叉"
+msgstr "已选交叉维度"
 
 #: freppledb/forecast/static/forecast/forecast.html:417
 msgid "Selected forecast method"
@@ -362,11 +362,7 @@ msgid ""
 "                        This also consider the duration of the follow-up "
 "operations still required to produce the finished end item.\n"
 "                        <br><br>"
-msgstr ""
-"操作计划的延迟将其结束日期与提供的客户需求的交货期进行比较。<br>\n"
-"                        这也考虑到后续操作的持续时间还需要生产完成的最终項"
-"目。\n"
-"                        <br><br>"
+msgstr "计划订单的延迟量，是将其结束日期与其所满足客户需求的交期进行比较得出的。<br>\n                        计算时还会考虑生产最终物料所需后续工序的持续时间。\n                        <br><br>"
 
 #: freppledb/forecast/static/forecast/forecast.html:392
 msgid "Trend"

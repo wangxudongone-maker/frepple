@@ -1,0 +1,176 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: frePPLe MLCC 9.17.0\n"
+"Language: zh_Hans\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=1; plural=0;\n"
+
+msgid "MLCC planning"
+msgstr "MLCC 排产"
+
+msgid "MLCC material type"
+msgstr "MLCC 物料类型"
+
+msgid "MLCC product family"
+msgstr "MLCC 产品族"
+
+msgid "MLCC chip size"
+msgstr "MLCC 芯片尺寸"
+
+msgid "MLCC layer count"
+msgstr "MLCC 层数"
+
+msgid "MLCC quality grade"
+msgstr "MLCC 质量等级"
+
+msgid "MLCC equipment group"
+msgstr "MLCC 设备组"
+
+msgid "MLCC furnace"
+msgstr "MLCC 炉设备"
+
+msgid "MLCC nominal capacity"
+msgstr "MLCC 标称容量"
+
+msgid "MLCC process stage"
+msgstr "MLCC 工序阶段"
+
+msgid "MLCC recipe required"
+msgstr "MLCC 必须指定配方"
+
+msgid "MLCC batch required"
+msgstr "MLCC 必须追踪批次"
+
+msgid "MLCC batch code"
+msgstr "MLCC 批次号"
+
+msgid "MLCC lot number"
+msgstr "MLCC 生产批号"
+
+msgid "MLCC recipe version"
+msgstr "MLCC 配方版本"
+
+msgid "MLCC schedulable"
+msgstr "MLCC 可排产"
+
+msgid "stacking"
+msgstr "叠层"
+
+msgid "lamination"
+msgstr "层压"
+
+msgid "cutting"
+msgstr "切割"
+
+msgid "debinding"
+msgstr "排胶"
+
+msgid "sintering"
+msgstr "烧结"
+
+msgid "Recipes"
+msgstr "配方"
+
+msgid "Equipment capabilities"
+msgstr "设备能力"
+
+msgid "Compatibility rules"
+msgstr "同炉规则"
+
+msgid "Setup matrices"
+msgstr "换型矩阵"
+
+msgid "Batch genealogy"
+msgstr "批次谱系"
+
+msgid "Furnace loads"
+msgstr "炉次"
+
+msgid "Furnace load items"
+msgstr "炉次明细"
+
+msgid "Quality holds"
+msgstr "质量冻结"
+
+msgid "Schedule runs"
+msgstr "排程运行"
+
+msgid "Schedule results"
+msgstr "排程结果"
+
+msgid "process stage"
+msgstr "工序阶段"
+
+msgid "product family A"
+msgstr "产品族 A"
+
+msgid "product family B"
+msgstr "产品族 B"
+
+msgid "rule type"
+msgstr "规则类型"
+
+msgid "from recipe"
+msgstr "原配方"
+
+msgid "to recipe"
+msgstr "目标配方"
+
+msgid "parent batch"
+msgstr "父批次"
+
+msgid "child batch"
+msgstr "子批次"
+
+msgid "furnace load"
+msgstr "炉次"
+
+msgid "batch code"
+msgstr "批次号"
+
+msgid "hold type"
+msgstr "冻结类型"
+
+msgid "held at"
+msgstr "冻结时间"
+
+msgid "released at"
+msgstr "释放时间"
+
+msgid "schedule run"
+msgstr "排程运行"
+
+msgid "not schedulable"
+msgstr "不可排产"
+
+msgid "A recipe version is required."
+msgstr "配方版本为必填项。"
+
+msgid "An effective date is required."
+msgstr "配方生效日期为必填项。"
+
+msgid "Furnace load capacity must be greater than zero."
+msgstr "炉次容量必须大于 0。"
+
+msgid "This resource, stage, recipe and item capability already exists."
+msgstr "该设备、工序、配方和物料的能力矩阵已经存在。"
+
+msgid "A product family cannot be forbidden from sharing a furnace with itself."
+msgstr "产品族不能被禁止与自身同炉。"
+
+msgid "An enabled compatibility rule already exists for this unordered pair."
+msgstr "该无序产品族组合已经存在一条启用的同炉规则。"
+
+msgid "The batch genealogy would contain a cycle."
+msgstr "该父子关系会导致批次谱系形成循环。"
+
+msgid "A quality-held batch cannot enter a schedulable furnace load."
+msgstr "质量冻结批不能进入可排产炉次。"
+
+msgid "A quality-held batch cannot be schedulable."
+msgstr "质量冻结批不能进入可排产状态。"
+
+msgid "A quality-held batch cannot be marked schedulable."
+msgstr "质量冻结批不能标记为可排产。"

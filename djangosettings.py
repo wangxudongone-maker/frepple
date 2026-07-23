@@ -121,6 +121,7 @@ INSTALLED_APPS = (
     "django.contrib.staticfiles",
     "freppledb.boot",
     # Add any project specific apps here
+    "freppledb.mlcc",
     # "freppledb.odoo",
     # "freppledb.erpconnection",
     "freppledb.wizard",
@@ -234,7 +235,7 @@ LANGUAGES = (
 )
 
 # Default language
-LANGUAGE_CODE = LANGUAGES[0][0] or "en"
+LANGUAGE_CODE = os.environ.get("FREPPLE_LANGUAGE_CODE", "zh-hans")
 
 # The remember-me checkbox on the login page allows to keep a session cookie
 # active in your browser. The session will expire after the age configured

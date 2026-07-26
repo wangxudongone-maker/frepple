@@ -102,6 +102,37 @@ jobs:
           echo "PATH=$PATH" >> $GITHUB_ENV
           echo "VIRTUAL_ENV=$VIRTUAL_ENV" >> $GITHUB_ENV
 
+      - name: Rehearse PostgreSQL fresh install and phase-1 upgrade
+        if: matrix.label == 'phase2'
+        working-directory: ${{github.workspace}}
+        run: |
+          export POSTGRES_HOST=localhost
+          export POSTGRES_PORT=5432
+          export FREPPLE_DATE_STYLE="day-month-year"
+
+          # Path A: a clean PostgreSQL database migrates directly to the latest schema.
+          python frepplectl.py createdatabase --noinput
+          python frepplectl.py migrate
+          python frepplectl.py migrate --plan | tee /tmp/mlcc-fresh-plan.txt
+          grep -q "No planned migration operations" /tmp/mlcc-fresh-plan.txt
+
+          # Path B: load the real phase-1 demo at f7f538c, then apply 0003 and 0004.
+          phase1_checkout="${RUNNER_TEMP}/frepple-phase1-upgrade"
+          git worktree add --detach "${phase1_checkout}" f7f538cef7eaa404480e1f385feb9f89067c44d6
+          pushd "${phase1_checkout}"
+          python frepplectl.py createdatabase --noinput
+          python frepplectl.py migrate
+          python frepplectl.py load_mlcc_demo
+          python frepplectl.py shell -c "from freppledb.mlcc.models import MlccRecipe; assert MlccRecipe.objects.filter(source='mlcc_demo').exists()"
+          popd
+          python frepplectl.py migrate mlcc 0004
+          python frepplectl.py shell -c "from django.db import connection; from freppledb.mlcc.models import MlccRecipe; assert MlccRecipe.objects.filter(source='mlcc_demo').exists(); assert {'mlcc_precheck_run', 'mlcc_precheck_issue'}.issubset(set(connection.introspection.table_names()))"
+
+          # Path C: the upgraded database is idempotent.
+          python frepplectl.py migrate --plan | tee /tmp/mlcc-upgraded-plan.txt
+          grep -q "No planned migration operations" /tmp/mlcc-upgraded-plan.txt
+          git worktree remove --force "${phase1_checkout}"
+
       - name: Test
         working-directory: ${{github.workspace}}
         run: |

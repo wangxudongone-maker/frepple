@@ -1,16 +1,16 @@
 """Stable MLCC precheck codes, Chinese reasons and repair guidance."""
 
 from dataclasses import dataclass
-from enum import StrEnum
+from enum import Enum
 
 
-class Severity(StrEnum):
+class Severity(str, Enum):
     BLOCKER = "BLOCKER"
     WARNING = "WARNING"
     INFO = "INFO"
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class ReasonDefinition:
     code: str
     severity: Severity
@@ -19,7 +19,7 @@ class ReasonDefinition:
     source_field: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class PrecheckIssue:
     code: str
     severity: str

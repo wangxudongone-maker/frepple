@@ -1,5 +1,7 @@
 """Pure Python data contract consumed by a future MLCC scheduling solver."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Any
@@ -14,7 +16,7 @@ PROCESS_STAGE_ORDER = (
 )
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class PlanningWindow:
     origin: str
     horizon_minutes: int
@@ -22,7 +24,7 @@ class PlanningWindow:
     timezone: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class CustomerOrder:
     id: str
     item_id: str
@@ -32,7 +34,7 @@ class CustomerOrder:
     priority: int
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class ProductionBatch:
     id: str
     order_id: str
@@ -45,7 +47,7 @@ class ProductionBatch:
     schedulable: bool
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class ProcessStep:
     id: str
     batch_id: str
@@ -70,14 +72,14 @@ class ProcessStep:
     original_end_minute: int | None = None
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class CalendarInterval:
     start_minute: int
     end_minute: int
     kind: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class Equipment:
     id: str
     resource_id: str
@@ -88,7 +90,7 @@ class Equipment:
     maintenance: tuple[CalendarInterval, ...] = ()
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class EquipmentCapability:
     id: str
     resource_id: str
@@ -100,7 +102,7 @@ class EquipmentCapability:
     enabled: bool
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class Recipe:
     id: str
     name: str
@@ -113,7 +115,7 @@ class Recipe:
     parameters: dict[str, Any] = field(default_factory=dict)
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class CompatibilityRule:
     id: str
     stage: str
@@ -123,7 +125,7 @@ class CompatibilityRule:
     enabled: bool
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class SetupRule:
     id: str
     resource_id: str | None
@@ -133,7 +135,7 @@ class SetupRule:
     duration_minutes: int
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class MaterialAvailability:
     id: str
     item_id: str
@@ -143,7 +145,7 @@ class MaterialAvailability:
     kind: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class PlanningInstance:
     window: PlanningWindow
     customer_orders: tuple[CustomerOrder, ...] = ()

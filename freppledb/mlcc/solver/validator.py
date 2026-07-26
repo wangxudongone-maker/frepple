@@ -1,5 +1,7 @@
 """Pure, solver-independent validation of an MLCC planning instance."""
 
+from __future__ import annotations
+
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date
@@ -9,7 +11,7 @@ from .reasons import PrecheckIssue, issue
 from .schema import PROCESS_STAGE_ORDER, PlanningInstance
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class PrecheckReport:
     issues: tuple[PrecheckIssue, ...]
 

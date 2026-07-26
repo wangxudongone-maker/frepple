@@ -108,6 +108,7 @@ jobs:
         run: |
           export POSTGRES_HOST=localhost
           export POSTGRES_PORT=5432
+          export POSTGRES_DBNAME=mlccgate
           export FREPPLE_DATE_STYLE="day-month-year"
 
           # Path A: a clean PostgreSQL database migrates directly to the latest schema.
@@ -134,11 +135,6 @@ jobs:
           python frepplectl.py migrate --plan | tee /tmp/mlcc-upgraded-plan.txt
           grep -q "No planned migration operations" /tmp/mlcc-upgraded-plan.txt
           git worktree remove --force "${phase1_checkout}"
-
-          # Reset the disposable database so repository tests don't inherit
-          # phase-1 role grants from the upgrade rehearsal.
-          python frepplectl.py createdatabase --noinput
-          python frepplectl.py migrate
 
       - name: Test
         working-directory: ${{github.workspace}}

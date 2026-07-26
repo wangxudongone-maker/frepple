@@ -19,6 +19,7 @@ registerAttribute(
         ("mlcc_equipment_group", _("MLCC equipment group"), "string"),
         ("mlcc_is_furnace", _("MLCC furnace"), "boolean"),
         ("mlcc_nominal_capacity", _("MLCC nominal capacity"), "number"),
+        ("mlcc_load_unit", _("MLCC load unit"), "string"),
     ],
 )
 
@@ -28,6 +29,7 @@ registerAttribute(
         ("mlcc_process_stage", _("MLCC process stage"), "string"),
         ("mlcc_recipe_required", _("MLCC recipe required"), "boolean"),
         ("mlcc_batch_required", _("MLCC batch required"), "boolean"),
+        ("mlcc_max_wait_time", _("MLCC maximum wait time"), "duration"),
     ],
 )
 

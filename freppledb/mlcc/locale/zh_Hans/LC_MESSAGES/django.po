@@ -174,3 +174,111 @@ msgstr "质量冻结批不能进入可排产状态。"
 
 msgid "A quality-held batch cannot be marked schedulable."
 msgstr "质量冻结批不能标记为可排产。"
+
+msgid "Precheck runs"
+msgstr "预检运行"
+
+msgid "Planning data check"
+msgstr "排产数据检查"
+
+msgid "MLCC precheck runs"
+msgstr "MLCC 预检运行"
+
+msgid "MLCC planning data check"
+msgstr "MLCC 排产数据检查"
+
+msgid "precheck run"
+msgstr "预检运行"
+
+msgid "horizon start"
+msgstr "排产周期开始"
+
+msgid "horizon end"
+msgstr "排产周期结束"
+
+msgid "freeze minutes"
+msgstr "冻结窗口（分钟）"
+
+msgid "factory timezone"
+msgstr "工厂时区"
+
+msgid "instance hash"
+msgstr "实例哈希"
+
+msgid "order count"
+msgstr "订单数"
+
+msgid "batch count"
+msgstr "批次数"
+
+msgid "task count"
+msgstr "任务数"
+
+msgid "equipment count"
+msgstr "设备数"
+
+msgid "blocker count"
+msgstr "阻断项数"
+
+msgid "warning count"
+msgstr "警告数"
+
+msgid "info count"
+msgstr "信息数"
+
+msgid "duration milliseconds"
+msgstr "耗时（毫秒）"
+
+msgid "severity"
+msgstr "严重级别"
+
+msgid "error code"
+msgstr "错误码"
+
+msgid "object type"
+msgstr "对象类型"
+
+msgid "object identifier"
+msgstr "对象标识"
+
+msgid "suggestion"
+msgstr "修复建议"
+
+msgid "source field"
+msgstr "来源字段"
+
+msgid "locate source data"
+msgstr "定位基础数据"
+
+msgid "blocker"
+msgstr "阻断"
+
+msgid "warning"
+msgstr "警告"
+
+msgid "info"
+msgstr "信息"
+
+msgid "passed"
+msgstr "通过"
+
+msgid "blocked"
+msgstr "已阻断"
+
+msgid "MLCC load unit"
+msgstr "装载单位"
+
+msgid "MLCC maximum wait time"
+msgstr "最大等待时间"
+
+msgid "MLCC precheck run"
+msgstr "MLCC 预检运行"
+
+msgid "MLCC precheck issue"
+msgstr "MLCC 预检问题"
+
+msgid "MLCC precheck issues"
+msgstr "MLCC 预检问题"
+
+msgid "object URL"
+msgstr "对象链接"

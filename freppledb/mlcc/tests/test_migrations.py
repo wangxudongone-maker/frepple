@@ -16,6 +16,8 @@ class MlccMigrationTest(TestCase):
             "mlcc_quality_hold",
             "mlcc_schedule_run",
             "mlcc_schedule_result",
+            "mlcc_precheck_run",
+            "mlcc_precheck_issue",
         }
         self.assertTrue(expected_tables.issubset(tables))
 
@@ -31,11 +33,13 @@ class MlccMigrationTest(TestCase):
                 "mlcc_equipment_group",
                 "mlcc_is_furnace",
                 "mlcc_nominal_capacity",
+                "mlcc_load_unit",
             },
             "operation": {
                 "mlcc_process_stage",
                 "mlcc_recipe_required",
                 "mlcc_batch_required",
+                "mlcc_max_wait_time",
             },
             "operationplan": {
                 "mlcc_batch_code",

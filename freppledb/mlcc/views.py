@@ -21,6 +21,8 @@ from .models import (
     MlccFurnaceLoad,
     MlccFurnaceLoadItem,
     MlccQualityHold,
+    MlccPrecheckIssue,
+    MlccPrecheckRun,
     MlccRecipe,
     MlccScheduleResult,
     MlccScheduleRun,
@@ -271,4 +273,76 @@ class MlccScheduleResultList(GridReport):
         GridFieldInteger("sequence", title=_("sequence")),
         GridFieldNumber("score", title=_("score")),
         GridFieldJSON("details", title=_("details")),
+    ) + common_tail
+
+
+class MlccPrecheckRunList(GridReport):
+    title = _("MLCC precheck runs")
+    model = MlccPrecheckRun
+    basequeryset = MlccPrecheckRun.objects.all()
+    frozenColumns = 1
+    rows = (
+        detail_id("mlccprecheckrun"),
+        GridFieldText("reference", title=_("reference")),
+        GridFieldChoice("status", title=_("status"), choices=MlccPrecheckRun.STATUSES),
+        GridFieldDateTime("horizon_start", title=_("horizon start")),
+        GridFieldDateTime("horizon_end", title=_("horizon end")),
+        GridFieldInteger("freeze_minutes", title=_("freeze minutes")),
+        GridFieldText("factory_timezone", title=_("factory timezone")),
+        GridFieldText("instance_hash", title=_("instance hash")),
+        GridFieldInteger("order_count", title=_("order count")),
+        GridFieldInteger("batch_count", title=_("batch count")),
+        GridFieldInteger("task_count", title=_("task count")),
+        GridFieldInteger("equipment_count", title=_("equipment count")),
+        GridFieldInteger("blocker_count", title=_("blocker count")),
+        GridFieldInteger("warning_count", title=_("warning count")),
+        GridFieldInteger("info_count", title=_("info count")),
+        GridFieldInteger("duration_ms", title=_("duration milliseconds")),
+    ) + common_tail
+
+
+class MlccPrecheckIssueList(GridReport):
+    title = _("MLCC planning data check")
+    model = MlccPrecheckIssue
+    basequeryset = MlccPrecheckIssue.objects.select_related("run").all()
+    frozenColumns = 1
+    rows = (
+        detail_id("mlccprecheckissue"),
+        GridFieldText("run", title=_("precheck run"), field_name="run__reference"),
+        GridFieldChoice(
+            "severity", title=_("severity"), choices=MlccPrecheckIssue.SEVERITIES
+        ),
+        GridFieldText("code", title=_("error code")),
+        GridFieldText("object_type", title=_("object type")),
+        GridFieldText("object_id", title=_("object identifier")),
+        GridFieldText("reason", title=_("reason")),
+        GridFieldText("suggestion", title=_("suggestion")),
+        GridFieldText("source_field", title=_("source field")),
+        GridFieldText(
+            "object_url",
+            title=_("locate source data"),
+            formatter="link",
+            extra='"formatoptions":{"target":"_self"}',
+            editable=False,
+        ),
+        GridFieldInteger(
+            "order_count", title=_("order count"), field_name="run__order_count"
+        ),
+        GridFieldInteger(
+            "batch_count", title=_("batch count"), field_name="run__batch_count"
+        ),
+        GridFieldInteger(
+            "task_count", title=_("task count"), field_name="run__task_count"
+        ),
+        GridFieldInteger(
+            "equipment_count",
+            title=_("equipment count"),
+            field_name="run__equipment_count",
+        ),
+        GridFieldInteger(
+            "blocker_count", title=_("blocker count"), field_name="run__blocker_count"
+        ),
+        GridFieldInteger(
+            "warning_count", title=_("warning count"), field_name="run__warning_count"
+        ),
     ) + common_tail

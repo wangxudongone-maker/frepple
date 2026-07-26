@@ -1,0 +1,59 @@
+{
+  "batches": [
+    {
+      "due_minute": 10080,
+      "id": "batch:MLCC-EXAMPLE-0001",
+      "item_id": "item:MLCC-0603-X7R",
+      "order_id": "order:SO-EXAMPLE-0001",
+      "priority": 1,
+      "product_family": "X7R",
+      "quality_hold": false,
+      "quantity": "100",
+      "schedulable": true
+    }
+  ],
+  "capabilities": [
+    {"enabled": true, "id": "capability:stacking", "item_id": "item:MLCC-0603-X7R", "maximum_quantity": "1000", "minimum_quantity": "1", "recipe_id": null, "resource_id": "resource:STACK-01", "stage": "stacking"},
+    {"enabled": true, "id": "capability:lamination", "item_id": "item:MLCC-0603-X7R", "maximum_quantity": "1000", "minimum_quantity": "1", "recipe_id": null, "resource_id": "resource:LAM-01", "stage": "lamination"},
+    {"enabled": true, "id": "capability:cutting", "item_id": "item:MLCC-0603-X7R", "maximum_quantity": "1000", "minimum_quantity": "1", "recipe_id": null, "resource_id": "resource:CUT-01", "stage": "cutting"},
+    {"enabled": true, "id": "capability:debinding", "item_id": "item:MLCC-0603-X7R", "maximum_quantity": "1000", "minimum_quantity": "1", "recipe_id": "recipe:DEB-V1", "resource_id": "resource:DEB-01", "stage": "debinding"},
+    {"enabled": true, "id": "capability:sintering", "item_id": "item:MLCC-0603-X7R", "maximum_quantity": "1000", "minimum_quantity": "1", "recipe_id": "recipe:SIN-V1", "resource_id": "resource:SIN-01", "stage": "sintering"}
+  ],
+  "compatibility_rules": [
+    {"enabled": true, "family_a": "C0G", "family_b": "X7R", "id": "compatibility:C0G-X7R", "rule_type": "forbid", "stage": "sintering"}
+  ],
+  "customer_orders": [
+    {"batch_id": "batch:MLCC-EXAMPLE-0001", "due_minute": 10080, "id": "order:SO-EXAMPLE-0001", "item_id": "item:MLCC-0603-X7R", "priority": 1, "quantity": "100"}
+  ],
+  "equipment": [
+    {"capacity": "1000", "downtimes": [], "id": "resource:CUT-01", "load_unit": "panel", "maintenance": [], "resource_id": "CUT-01", "shifts": [{"end_minute": 20160, "kind": "shift", "start_minute": 0}]},
+    {"capacity": "1000", "downtimes": [], "id": "resource:DEB-01", "load_unit": "tray", "maintenance": [], "resource_id": "DEB-01", "shifts": [{"end_minute": 20160, "kind": "shift", "start_minute": 0}]},
+    {"capacity": "1000", "downtimes": [], "id": "resource:LAM-01", "load_unit": "panel", "maintenance": [], "resource_id": "LAM-01", "shifts": [{"end_minute": 20160, "kind": "shift", "start_minute": 0}]},
+    {"capacity": "1000", "downtimes": [], "id": "resource:SIN-01", "load_unit": "tray", "maintenance": [], "resource_id": "SIN-01", "shifts": [{"end_minute": 20160, "kind": "shift", "start_minute": 0}]},
+    {"capacity": "1000", "downtimes": [], "id": "resource:STACK-01", "load_unit": "panel", "maintenance": [], "resource_id": "STACK-01", "shifts": [{"end_minute": 20160, "kind": "shift", "start_minute": 0}]}
+  ],
+  "materials": [
+    {"available_minute": 0, "batch_id": null, "id": "material:RAW-TAPE:*", "item_id": "item:RAW-TAPE", "kind": "raw_material", "quantity": "1000"},
+    {"available_minute": 4380, "batch_id": "batch:MLCC-EXAMPLE-0001", "id": "wip:batch:MLCC-EXAMPLE-0001:stacking", "item_id": "item:MLCC-0603-X7R", "kind": "work_in_progress", "quantity": "100"},
+    {"available_minute": 4455, "batch_id": "batch:MLCC-EXAMPLE-0001", "id": "wip:batch:MLCC-EXAMPLE-0001:lamination", "item_id": "item:MLCC-0603-X7R", "kind": "work_in_progress", "quantity": "100"},
+    {"available_minute": 4515, "batch_id": "batch:MLCC-EXAMPLE-0001", "id": "wip:batch:MLCC-EXAMPLE-0001:cutting", "item_id": "item:MLCC-0603-X7R", "kind": "work_in_progress", "quantity": "100"},
+    {"available_minute": 4890, "batch_id": "batch:MLCC-EXAMPLE-0001", "id": "wip:batch:MLCC-EXAMPLE-0001:debinding", "item_id": "item:MLCC-0603-X7R", "kind": "work_in_progress", "quantity": "100"}
+  ],
+  "recipes": [
+    {"active": true, "effective_date": "2025-12-01", "expiry_date": null, "id": "recipe:DEB-V1", "name": "排胶标准配方", "parameters": {"setup_family": "debinding-a"}, "setup_family": "debinding-a", "stage": "debinding", "version": "V1"},
+    {"active": true, "effective_date": "2025-12-01", "expiry_date": null, "id": "recipe:SIN-V1", "name": "烧结标准配方", "parameters": {"setup_family": "sintering-a"}, "setup_family": "sintering-a", "stage": "sintering", "version": "V1"},
+    {"active": true, "effective_date": "2025-12-15", "expiry_date": null, "id": "recipe:SIN-V2", "name": "烧结标准配方", "parameters": {"setup_family": "sintering-b"}, "setup_family": "sintering-b", "stage": "sintering", "version": "V2"}
+  ],
+  "schema_version": "mlcc-planning-instance/v1",
+  "setup_rules": [
+    {"duration_minutes": 90, "from_recipe_id": "recipe:SIN-V1", "id": "setup:SIN-01:SIN-V1:SIN-V2", "resource_id": "resource:SIN-01", "stage": "sintering", "to_recipe_id": "recipe:SIN-V2"}
+  ],
+  "steps": [
+    {"assigned_resource_id": null, "batch_id": "batch:MLCC-EXAMPLE-0001", "candidate_resource_ids": ["resource:STACK-01"], "certified_resource_ids": ["resource:STACK-01"], "duration_minutes": 60, "frozen": false, "id": "task:MO-EXAMPLE-1", "maximum_batch": "1000", "maximum_wait_minutes": 2880, "minimum_batch": "1", "minimum_wait_minutes": 0, "operation_id": "operation:STACK", "original_end_minute": 4380, "original_start_minute": 4320, "predecessor_ids": [], "quantity": "100", "recipe_id": null, "required_material_ids": ["material:RAW-TAPE:*"], "sequence": 1, "stage": "stacking", "started": false},
+    {"assigned_resource_id": null, "batch_id": "batch:MLCC-EXAMPLE-0001", "candidate_resource_ids": ["resource:LAM-01"], "certified_resource_ids": ["resource:LAM-01"], "duration_minutes": 60, "frozen": false, "id": "task:MO-EXAMPLE-2", "maximum_batch": "1000", "maximum_wait_minutes": 2880, "minimum_batch": "1", "minimum_wait_minutes": 0, "operation_id": "operation:LAM", "original_end_minute": 4455, "original_start_minute": 4395, "predecessor_ids": ["task:MO-EXAMPLE-1"], "quantity": "100", "recipe_id": null, "required_material_ids": ["wip:batch:MLCC-EXAMPLE-0001:stacking"], "sequence": 2, "stage": "lamination", "started": false},
+    {"assigned_resource_id": null, "batch_id": "batch:MLCC-EXAMPLE-0001", "candidate_resource_ids": ["resource:CUT-01"], "certified_resource_ids": ["resource:CUT-01"], "duration_minutes": 45, "frozen": false, "id": "task:MO-EXAMPLE-3", "maximum_batch": "1000", "maximum_wait_minutes": 2880, "minimum_batch": "1", "minimum_wait_minutes": 0, "operation_id": "operation:CUT", "original_end_minute": 4515, "original_start_minute": 4470, "predecessor_ids": ["task:MO-EXAMPLE-2"], "quantity": "100", "recipe_id": null, "required_material_ids": ["wip:batch:MLCC-EXAMPLE-0001:lamination"], "sequence": 3, "stage": "cutting", "started": false},
+    {"assigned_resource_id": null, "batch_id": "batch:MLCC-EXAMPLE-0001", "candidate_resource_ids": ["resource:DEB-01"], "certified_resource_ids": ["resource:DEB-01"], "duration_minutes": 360, "frozen": false, "id": "task:MO-EXAMPLE-4", "maximum_batch": "1000", "maximum_wait_minutes": 2880, "minimum_batch": "1", "minimum_wait_minutes": 0, "operation_id": "operation:DEB", "original_end_minute": 4890, "original_start_minute": 4530, "predecessor_ids": ["task:MO-EXAMPLE-3"], "quantity": "100", "recipe_id": "recipe:DEB-V1", "required_material_ids": ["wip:batch:MLCC-EXAMPLE-0001:cutting"], "sequence": 4, "stage": "debinding", "started": false},
+    {"assigned_resource_id": null, "batch_id": "batch:MLCC-EXAMPLE-0001", "candidate_resource_ids": ["resource:SIN-01"], "certified_resource_ids": ["resource:SIN-01"], "duration_minutes": 480, "frozen": false, "id": "task:MO-EXAMPLE-5", "maximum_batch": "1000", "maximum_wait_minutes": 2880, "minimum_batch": "1", "minimum_wait_minutes": 0, "operation_id": "operation:SIN", "original_end_minute": 5385, "original_start_minute": 4905, "predecessor_ids": ["task:MO-EXAMPLE-4"], "quantity": "100", "recipe_id": "recipe:SIN-V1", "required_material_ids": ["wip:batch:MLCC-EXAMPLE-0001:debinding"], "sequence": 5, "stage": "sintering", "started": false}
+  ],
+  "window": {"freeze_minutes": 2880, "horizon_minutes": 20160, "origin": "2026-01-05T00:00:00+08:00", "timezone": "Asia/Shanghai"}
+}

@@ -729,3 +729,92 @@ class MlccScheduleResult(ValidatedAuditModel):
         ]
         verbose_name = _("MLCC schedule result")
         verbose_name_plural = _("MLCC schedule results")
+
+
+class MlccPrecheckRun(ValidatedAuditModel):
+    STATUSES = (("passed", _("passed")), ("blocked", _("blocked")))
+
+    id = models.AutoField(_("identifier"), primary_key=True)
+    reference = models.CharField(_("reference"), max_length=100, unique=True)
+    status = models.CharField(
+        _("status"), max_length=15, choices=STATUSES, default="passed"
+    )
+    horizon_start = models.DateTimeField(_("horizon start"))
+    horizon_end = models.DateTimeField(_("horizon end"))
+    freeze_minutes = models.PositiveIntegerField(_("freeze minutes"), default=0)
+    factory_timezone = models.CharField(_("factory timezone"), max_length=100)
+    instance_hash = models.CharField(_("instance hash"), max_length=64, db_index=True)
+    order_count = models.PositiveIntegerField(_("order count"), default=0)
+    batch_count = models.PositiveIntegerField(_("batch count"), default=0)
+    task_count = models.PositiveIntegerField(_("task count"), default=0)
+    equipment_count = models.PositiveIntegerField(_("equipment count"), default=0)
+    blocker_count = models.PositiveIntegerField(_("blocker count"), default=0)
+    warning_count = models.PositiveIntegerField(_("warning count"), default=0)
+    info_count = models.PositiveIntegerField(_("info count"), default=0)
+    duration_ms = models.PositiveIntegerField(_("duration milliseconds"), default=0)
+    parameters = models.JSONField(_("parameters"), default=dict, blank=True)
+
+    def __str__(self):
+        return self.reference
+
+    def clean(self):
+        if (
+            self.horizon_start
+            and self.horizon_end
+            and self.horizon_end <= self.horizon_start
+        ):
+            raise ValidationError(
+                {"horizon_end": _("Horizon end must be after horizon start.")}
+            )
+        expected = "blocked" if self.blocker_count else "passed"
+        if self.status != expected:
+            raise ValidationError(
+                {"status": _("Precheck status must match the blocker count.")}
+            )
+
+    class Meta(AuditModel.Meta):
+        db_table = "mlcc_precheck_run"
+        ordering = ("-lastmodified", "reference")
+        verbose_name = _("MLCC precheck run")
+        verbose_name_plural = _("MLCC precheck runs")
+
+
+class MlccPrecheckIssue(ValidatedAuditModel):
+    SEVERITIES = (
+        ("BLOCKER", _("blocker")),
+        ("WARNING", _("warning")),
+        ("INFO", _("info")),
+    )
+
+    id = models.AutoField(_("identifier"), primary_key=True)
+    run = models.ForeignKey(
+        MlccPrecheckRun,
+        verbose_name=_("precheck run"),
+        related_name="issues",
+        on_delete=models.CASCADE,
+    )
+    sequence = models.PositiveIntegerField(_("sequence"))
+    severity = models.CharField(_("severity"), max_length=10, choices=SEVERITIES)
+    code = models.CharField(_("error code"), max_length=20, db_index=True)
+    object_type = models.CharField(_("object type"), max_length=50, db_index=True)
+    object_id = models.CharField(_("object identifier"), max_length=300, db_index=True)
+    reason = models.TextField(_("reason"))
+    suggestion = models.TextField(_("suggestion"))
+    source_field = models.CharField(_("source field"), max_length=300)
+    object_url = models.CharField(
+        _("object URL"), max_length=500, null=True, blank=True
+    )
+
+    def __str__(self):
+        return f"{self.code}: {self.object_type} {self.object_id}"
+
+    class Meta(AuditModel.Meta):
+        db_table = "mlcc_precheck_issue"
+        ordering = ("run", "sequence")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("run", "sequence"), name="mlcc_precheck_issue_sequence_uniq"
+            )
+        ]
+        verbose_name = _("MLCC precheck issue")
+        verbose_name_plural = _("MLCC precheck issues")

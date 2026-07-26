@@ -6,6 +6,11 @@ autodiscover = True
 
 if mode != "ASGI":
     from . import serializers, views
+    from .solver.api import (
+        MlccPlanningInstanceAPI,
+        MlccPrecheckAPI,
+        MlccPrecheckResultAPI,
+    )
 
     _routes = (
         (
@@ -83,5 +88,25 @@ if mode != "ASGI":
                 path(f"api/mlcc/{slug}/<int:pk>/", detail_api.as_view()),
             ]
         )
+    urlpatterns.extend(
+        [
+            path(
+                "data/mlcc/precheckrun/",
+                views.MlccPrecheckRunList.as_view(),
+                name="mlcc_precheckrun_changelist",
+            ),
+            path(
+                "data/mlcc/precheck/",
+                views.MlccPrecheckIssueList.as_view(),
+                name="mlcc_precheck_changelist",
+            ),
+            path("api/mlcc/planning-instance/", MlccPlanningInstanceAPI.as_view()),
+            path("api/mlcc/precheck/", MlccPrecheckAPI.as_view()),
+            path(
+                "api/mlcc/precheck/<int:pk>/",
+                MlccPrecheckResultAPI.as_view(),
+            ),
+        ]
+    )
 else:
     urlpatterns = []

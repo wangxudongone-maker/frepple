@@ -11,6 +11,8 @@ from .models import (
     MlccFurnaceLoad,
     MlccFurnaceLoadItem,
     MlccQualityHold,
+    MlccPrecheckIssue,
+    MlccPrecheckRun,
     MlccRecipe,
     MlccScheduleResult,
     MlccScheduleRun,
@@ -207,5 +209,46 @@ class MlccScheduleResultAdmin(MlccModelAdmin):
         "sequence",
         "score",
         "details",
+        "source",
+    )
+
+
+@admin.register(MlccPrecheckRun, site=data_site)
+class MlccPrecheckRunAdmin(MlccModelAdmin):
+    readonly_fields = (
+        "reference",
+        "status",
+        "horizon_start",
+        "horizon_end",
+        "freeze_minutes",
+        "factory_timezone",
+        "instance_hash",
+        "order_count",
+        "batch_count",
+        "task_count",
+        "equipment_count",
+        "blocker_count",
+        "warning_count",
+        "info_count",
+        "duration_ms",
+        "parameters",
+        "source",
+    )
+
+
+@admin.register(MlccPrecheckIssue, site=data_site)
+class MlccPrecheckIssueAdmin(MlccModelAdmin):
+    raw_id_fields = ("run",)
+    readonly_fields = (
+        "run",
+        "sequence",
+        "severity",
+        "code",
+        "object_type",
+        "object_id",
+        "reason",
+        "suggestion",
+        "source_field",
+        "object_url",
         "source",
     )

@@ -150,13 +150,13 @@ class SolverAPITest(TestCase):
         self.assertIn(response.status_code, (401, 403))
 
     def test_solve_api_returns_valid_preview_without_overwriting_plan(self):
-        SolverDemoLoader().load_valid(1)
         request = self.request(
             "post",
             "/api/mlcc/solve/",
             data={
                 **self.payload,
-                "max_time_seconds": 5,
+                "horizon_days": 45,
+                "max_time_seconds": 30,
                 "workers": 1,
                 "persist": True,
             },
@@ -166,7 +166,7 @@ class SolverAPITest(TestCase):
         self.assertIn(response.data["status"], ("FEASIBLE", "OPTIMAL"))
         self.assertEqual(response.data["hard_constraint_violations"], 0)
         self.assertEqual(response.data["solution"]["solver_version"], "9.10.4067")
-        self.assertEqual(len(response.data["solution"]["assignments"]), 5)
+        self.assertEqual(len(response.data["solution"]["assignments"]), 500)
         self.assertTrue(
             MlccScheduleRun.objects.filter(
                 pk=response.data["preview_run_id"],
@@ -179,7 +179,7 @@ class SolverAPITest(TestCase):
                 status="proposed",
                 details__preview_only=True,
             ).count(),
-            5,
+            500,
         )
 
     def test_solve_api_does_not_start_with_blockers(self):

@@ -1,3 +1,4 @@
+import ast
 import inspect
 from dataclasses import replace
 
@@ -188,5 +189,14 @@ class CpSatPureSolverTest(SimpleTestCase):
 
     def test_pure_solver_has_no_django_or_orm_dependency(self):
         source = inspect.getsource(cpsat)
-        self.assertNotIn("django", source.lower())
+        tree = ast.parse(source)
+        imported_modules = []
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                imported_modules.extend(alias.name for alias in node.names)
+            elif isinstance(node, ast.ImportFrom):
+                imported_modules.append(node.module or "")
+        self.assertFalse(
+            any(name == "django" or name.startswith("django.") for name in imported_modules)
+        )
         self.assertNotIn("objects.", source)

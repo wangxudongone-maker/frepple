@@ -461,8 +461,8 @@ class SolverDemoLoader:
                     MlccCompatibilityRule(
                         name="MLCC-P2-INVALID-COMPAT-ALLOW",
                         process_stage="sintering",
-                        family_a="C0G",
-                        family_b="X7R",
+                        family_a="Y5V",
+                        family_b="Z5U",
                         rule_type="allow",
                         enabled=True,
                         source=source,
@@ -470,8 +470,8 @@ class SolverDemoLoader:
                     MlccCompatibilityRule(
                         name="MLCC-P2-INVALID-COMPAT-FORBID",
                         process_stage="sintering",
-                        family_a="X7R",
-                        family_b="C0G",
+                        family_a="Z5U",
+                        family_b="Y5V",
                         rule_type="forbid",
                         enabled=True,
                         source=source,

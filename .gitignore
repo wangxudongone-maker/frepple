@@ -5,6 +5,7 @@
 /node_modules
 /.pnpm-store
 /localsettings*
+/.runtime_*/
 /test/*/output.*.xml
 .vs
 .pnpm-store

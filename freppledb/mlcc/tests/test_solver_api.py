@@ -9,11 +9,16 @@ from freppledb.mlcc.demo import (
     VALID_SOURCE,
     SolverDemoLoader,
 )
-from freppledb.mlcc.models import MlccPrecheckRun
+from freppledb.mlcc.models import (
+    MlccPrecheckRun,
+    MlccScheduleResult,
+    MlccScheduleRun,
+)
 from freppledb.mlcc.solver.api import (
     MlccPlanningInstanceAPI,
     MlccPrecheckAPI,
     MlccPrecheckResultAPI,
+    MlccSolveAPI,
 )
 
 
@@ -133,6 +138,67 @@ class SolverAPITest(TestCase):
         )
         response = MlccPrecheckAPI.as_view()(request)
         self.assertEqual(response.status_code, 400)
+
+    def test_solve_api_requires_permission(self):
+        request = self.request(
+            "post",
+            "/api/mlcc/solve/",
+            data={**self.payload, "persist": False},
+            authenticated=False,
+        )
+        response = MlccSolveAPI.as_view()(request)
+        self.assertIn(response.status_code, (401, 403))
+
+    def test_solve_api_returns_valid_preview_without_overwriting_plan(self):
+        SolverDemoLoader().load_valid(1)
+        request = self.request(
+            "post",
+            "/api/mlcc/solve/",
+            data={
+                **self.payload,
+                "max_time_seconds": 5,
+                "workers": 1,
+                "persist": True,
+            },
+        )
+        response = MlccSolveAPI.as_view()(request)
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertIn(response.data["status"], ("FEASIBLE", "OPTIMAL"))
+        self.assertEqual(response.data["hard_constraint_violations"], 0)
+        self.assertEqual(response.data["solution"]["solver_version"], "9.10.4067")
+        self.assertEqual(len(response.data["solution"]["assignments"]), 5)
+        self.assertTrue(
+            MlccScheduleRun.objects.filter(
+                pk=response.data["preview_run_id"],
+                status="complete",
+            ).exists()
+        )
+        self.assertEqual(
+            MlccScheduleResult.objects.filter(
+                run_id=response.data["preview_run_id"],
+                status="proposed",
+                details__preview_only=True,
+            ).count(),
+            5,
+        )
+
+    def test_solve_api_does_not_start_with_blockers(self):
+        SolverDemoLoader().load_invalid()
+        request = self.request(
+            "post",
+            "/api/mlcc/solve/",
+            data={
+                **self.payload,
+                "source": INVALID_SOURCE,
+                "persist": False,
+            },
+        )
+        response = MlccSolveAPI.as_view()(request)
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.data["status"], "BLOCKED")
+        self.assertFalse(
+            MlccScheduleRun.objects.filter(source=INVALID_SOURCE).exists()
+        )
 
         request = self.request(
             "post",

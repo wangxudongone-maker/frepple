@@ -1,12 +1,24 @@
-"""Solver-neutral MLCC planning input construction and precheck package."""
+"""Solver-neutral MLCC planning data contracts.
 
-from .extractor import PlanningInstanceExtractor
-from .serializer import planning_instance_fingerprint, planning_instance_json
+ORM extraction is intentionally available only from ``solver.extractor`` so
+importing the CP-SAT package never initializes Django models.
+"""
+
+from .serializer import (
+    load_planning_instance,
+    planning_instance_fingerprint,
+    planning_instance_from_json,
+    planning_instance_json,
+)
+from .solution import SolverParameters, scheduling_solution_json
 from .validator import PlanningInstanceValidator
 
 __all__ = (
-    "PlanningInstanceExtractor",
     "PlanningInstanceValidator",
+    "SolverParameters",
+    "load_planning_instance",
     "planning_instance_fingerprint",
+    "planning_instance_from_json",
     "planning_instance_json",
+    "scheduling_solution_json",
 )

@@ -4,13 +4,17 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from freppledb.common.api.views import frepplePermissionClass
-from freppledb.mlcc.models import MlccPrecheckRun
+from freppledb.mlcc.models import MlccPrecheckRun, MlccScheduleRun
 
+from .cpsat import PrecheckBlockedError, solve
 from .serializer import (
     planning_instance_fingerprint,
     to_primitive,
 )
 from .service import build_and_validate, persist_precheck, report_payload
+from .solution import SolverParameters
+from .solution_validator import SchedulingSolutionValidator
+from .solve_service import persist_preview_solution
 
 
 def request_options(request):
@@ -134,4 +138,106 @@ class MlccPrecheckResultAPI(APIView):
                     for item in issues.order_by("sequence")
                 ],
             }
+        )
+
+
+def _boolean(value, default=False):
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    normalized = str(value).strip().lower()
+    if normalized in ("1", "true", "yes", "on"):
+        return True
+    if normalized in ("0", "false", "no", "off"):
+        return False
+    raise ValueError(f"Invalid boolean value: {value!r}")
+
+
+class MlccSolveAPI(APIView):
+    permission_classes = (frepplePermissionClass,)
+    queryset = MlccScheduleRun.objects.all()
+
+    def post(self, request):
+        try:
+            options = request_options(request)
+            max_time_seconds = float(request.data.get("max_time_seconds", 60))
+            workers = int(request.data.get("workers", 1))
+            random_seed = int(request.data.get("random_seed", 0))
+            persist = _boolean(request.data.get("persist"), default=True)
+            if max_time_seconds <= 0 or workers <= 0:
+                raise ValueError(
+                    "max_time_seconds and workers must be greater than zero"
+                )
+            instance, report, duration_ms = build_and_validate(**options)
+        except (TypeError, ValueError) as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        if report.blocker_count:
+            return Response(
+                {
+                    "status": "BLOCKED",
+                    "detail": "预检存在 BLOCKER，未启动 CP-SAT。",
+                    "precheck": report_payload(report),
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        parameters = SolverParameters(
+            max_time_seconds=max_time_seconds,
+            num_search_workers=workers,
+            random_seed=random_seed,
+            log_search_progress=False,
+        )
+        try:
+            solution = solve(instance, parameters)
+        except PrecheckBlockedError as exc:
+            return Response(
+                {
+                    "status": "BLOCKED",
+                    "detail": str(exc),
+                    "precheck": report_payload(exc.report),
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+        validation = SchedulingSolutionValidator().validate(instance, solution)
+        if solution.status not in ("FEASIBLE", "OPTIMAL"):
+            return Response(
+                {
+                    "status": solution.status,
+                    "detail": solution.message,
+                    "solution": to_primitive(solution),
+                },
+                status=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            )
+        if not validation.valid:
+            return Response(
+                {
+                    "status": "INVALID_SOLUTION",
+                    "violations": [
+                        to_primitive(item) for item in validation.violations
+                    ],
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        run = (
+            persist_preview_solution(
+                instance,
+                solution,
+                database=options["database"],
+                source=options["source"],
+            )
+            if persist
+            else None
+        )
+        return Response(
+            {
+                "status": solution.status,
+                "preview_run_id": run.pk if run else None,
+                "preview_run": run.name if run else None,
+                "precheck_duration_ms": duration_ms,
+                "hard_constraint_violations": validation.violation_count,
+                "solution": to_primitive(solution),
+            },
+            status=status.HTTP_201_CREATED if run else status.HTTP_200_OK,
         )

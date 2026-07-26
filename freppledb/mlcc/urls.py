@@ -10,6 +10,7 @@ if mode != "ASGI":
         MlccPlanningInstanceAPI,
         MlccPrecheckAPI,
         MlccPrecheckResultAPI,
+        MlccSolveAPI,
     )
 
     _routes = (
@@ -106,6 +107,7 @@ if mode != "ASGI":
                 "api/mlcc/precheck/<int:pk>/",
                 MlccPrecheckResultAPI.as_view(),
             ),
+            path("api/mlcc/solve/", MlccSolveAPI.as_view()),
         ]
     )
 else:

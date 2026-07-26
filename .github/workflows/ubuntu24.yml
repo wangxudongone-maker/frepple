@@ -29,7 +29,7 @@ jobs:
         include:
           - label: phase1-baseline
             ref: f7f538cef7eaa404480e1f385feb9f89067c44d6
-          - label: phase2
+          - label: candidate
             ref: ${{ github.sha }}
     services:
       postgres:
@@ -65,7 +65,7 @@ jobs:
           pnpm install --frozen-lockfile
 
       - name: Build wheel from committed checkout
-        if: matrix.label == 'phase2'
+        if: matrix.label == 'candidate'
         run: |
           test -z "$(git status --porcelain)"
           python3 -m venv ${{github.workspace}}/.wheel-venv
@@ -76,10 +76,10 @@ jobs:
           sha256sum ${{github.workspace}}/build/wheel/*.whl
 
       - name: Upload wheel
-        if: matrix.label == 'phase2'
+        if: matrix.label == 'candidate'
         uses: actions/upload-artifact@v6
         with:
-          name: mlcc-phase2-wheel-${{ github.sha }}
+          name: mlcc-candidate-wheel-${{ github.sha }}
           path: ${{github.workspace}}/build/wheel/*.whl
           if-no-files-found: error
 
@@ -99,11 +99,14 @@ jobs:
           cmake --build ${{github.workspace}}/build --config Release --target doc
           . ${{github.workspace}}/venv/bin/activate
           python -c "import django, sys; print('Python', sys.version); print('Django', django.get_version())"
+          if [ "${{ matrix.label }}" = "candidate" ]; then
+            python -c "import ortools; print('OR-Tools', ortools.__version__)"
+          fi
           echo "PATH=$PATH" >> $GITHUB_ENV
           echo "VIRTUAL_ENV=$VIRTUAL_ENV" >> $GITHUB_ENV
 
       - name: Rehearse PostgreSQL fresh install and phase-1 upgrade
-        if: matrix.label == 'phase2'
+        if: matrix.label == 'candidate'
         working-directory: ${{github.workspace}}
         run: |
           export POSTGRES_HOST=localhost
@@ -170,7 +173,7 @@ jobs:
           retention-days: 1
 
       - uses: stefanzweifel/git-auto-commit-action@v7
-        if: matrix.label == 'phase2'
+        if: matrix.label == 'candidate'
         with:
           commit_message: Grunt to compile and minify css and javascript files
           file_pattern: "*.min.* *main.js"

@@ -17,7 +17,10 @@ from freppledb.mlcc.solver.serializer import (
     planning_instance_fingerprint,
     planning_instance_json,
 )
+from freppledb.mlcc.solver.cpsat import solve
 from freppledb.mlcc.solver.service import build_and_validate
+from freppledb.mlcc.solver.solution import SolverParameters
+from freppledb.mlcc.solver.solution_validator import SchedulingSolutionValidator
 
 
 class ValidSolverDemoIntegrationTest(TestCase):
@@ -98,6 +101,41 @@ class ValidSolverDemoIntegrationTest(TestCase):
         self.assertEqual(instance.counts["batches"], 500)
         self.assertEqual(report.blocker_count, 0, report.issues)
         self.assertLess(elapsed, 30)
+
+    def test_100_batch_cpsat_acceptance(self):
+        instance, report, _ = build_and_validate(
+            horizon_start=DEMO_ORIGIN,
+            horizon_days=45,
+            freeze_hours=48,
+            source=VALID_SOURCE,
+        )
+        self.assertEqual(report.blocker_count, 0, report.issues)
+        started = perf_counter()
+        solution = solve(instance, SolverParameters(max_time_seconds=30))
+        elapsed = perf_counter() - started
+        validation = SchedulingSolutionValidator().validate(instance, solution)
+        self.assertIn(solution.status, ("FEASIBLE", "OPTIMAL"), solution.message)
+        self.assertEqual(solution.scheduled_task_count, 500)
+        self.assertEqual(validation.violation_count, 0, validation.violations)
+        self.assertLess(elapsed, 60)
+
+    def test_500_batch_cpsat_acceptance(self):
+        SolverDemoLoader().load_valid(500)
+        instance, report, _ = build_and_validate(
+            horizon_start=DEMO_ORIGIN,
+            horizon_days=180,
+            freeze_hours=48,
+            source=VALID_SOURCE,
+        )
+        self.assertEqual(report.blocker_count, 0, report.issues)
+        started = perf_counter()
+        solution = solve(instance, SolverParameters(max_time_seconds=60))
+        elapsed = perf_counter() - started
+        validation = SchedulingSolutionValidator().validate(instance, solution)
+        self.assertIn(solution.status, ("FEASIBLE", "OPTIMAL"), solution.message)
+        self.assertEqual(solution.scheduled_task_count, 2500)
+        self.assertEqual(validation.violation_count, 0, validation.violations)
+        self.assertLess(elapsed, 300)
 
 
 class InvalidSolverDemoIntegrationTest(TestCase):

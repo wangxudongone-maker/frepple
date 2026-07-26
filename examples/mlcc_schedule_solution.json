@@ -1,0 +1,102 @@
+{
+  "assignments": [
+    {
+      "batch_id": "batch:MLCC-EXAMPLE-0001",
+      "end_minute": 4380,
+      "frozen": false,
+      "resource_id": "resource:STACK-01",
+      "stage": "stacking",
+      "start_minute": 4320,
+      "task_id": "task:MO-EXAMPLE-1"
+    },
+    {
+      "batch_id": "batch:MLCC-EXAMPLE-0001",
+      "end_minute": 4485,
+      "frozen": false,
+      "resource_id": "resource:LAM-01",
+      "stage": "lamination",
+      "start_minute": 4425,
+      "task_id": "task:MO-EXAMPLE-2"
+    },
+    {
+      "batch_id": "batch:MLCC-EXAMPLE-0001",
+      "end_minute": 4530,
+      "frozen": false,
+      "resource_id": "resource:CUT-01",
+      "stage": "cutting",
+      "start_minute": 4485,
+      "task_id": "task:MO-EXAMPLE-3"
+    },
+    {
+      "batch_id": "batch:MLCC-EXAMPLE-0001",
+      "end_minute": 4890,
+      "frozen": false,
+      "resource_id": "resource:DEB-01",
+      "stage": "debinding",
+      "start_minute": 4530,
+      "task_id": "task:MO-EXAMPLE-4"
+    },
+    {
+      "batch_id": "batch:MLCC-EXAMPLE-0001",
+      "end_minute": 5370,
+      "frozen": false,
+      "resource_id": "resource:SIN-01",
+      "stage": "sintering",
+      "start_minute": 4890,
+      "task_id": "task:MO-EXAMPLE-5"
+    }
+  ],
+  "input_fingerprint": "3eac3dd26e8cd500b5a4fbbb9b3eb5970fbc14114d205438b359f576cb176b89",
+  "message": "",
+  "objective_stages": [
+    {
+      "best_bound": null,
+      "name": "feasibility",
+      "status": "OPTIMAL",
+      "value": null,
+      "wall_time_seconds": 0.000898
+    },
+    {
+      "best_bound": 0.0,
+      "name": "weighted_tardiness",
+      "status": "OPTIMAL",
+      "value": 0,
+      "wall_time_seconds": 0.000392
+    },
+    {
+      "best_bound": 5370.0,
+      "name": "makespan",
+      "status": "OPTIMAL",
+      "value": 5370,
+      "wall_time_seconds": 0.000369
+    }
+  ],
+  "objective_values": {
+    "makespan": 5370,
+    "weighted_tardiness": 0
+  },
+  "optimality_gap": 0.0,
+  "orders": [
+    {
+      "completion_minute": 5370,
+      "due_minute": 10080,
+      "order_id": "order:SO-EXAMPLE-0001",
+      "priority": 1,
+      "priority_weight": 1,
+      "tardiness_minutes": 0,
+      "weighted_tardiness": 0
+    }
+  ],
+  "parameters": {
+    "furnace_mode": "one_batch_per_run",
+    "log_search_progress": false,
+    "max_time_seconds": 5,
+    "num_search_workers": 1,
+    "random_seed": 0
+  },
+  "schema_version": "mlcc-schedule-solution/v1",
+  "solver_name": "Google OR-Tools CP-SAT",
+  "solver_version": "9.10.4067",
+  "status": "OPTIMAL",
+  "wall_time_seconds": 0.014824
+}

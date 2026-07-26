@@ -135,6 +135,11 @@ jobs:
           grep -q "No planned migration operations" /tmp/mlcc-upgraded-plan.txt
           git worktree remove --force "${phase1_checkout}"
 
+          # Reset the disposable database so repository tests don't inherit
+          # phase-1 role grants from the upgrade rehearsal.
+          python frepplectl.py createdatabase --noinput
+          python frepplectl.py migrate
+
       - name: Test
         working-directory: ${{github.workspace}}
         run: |

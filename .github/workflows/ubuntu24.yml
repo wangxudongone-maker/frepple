@@ -64,9 +64,27 @@ jobs:
           sudo npm -g install pnpm@latest-10
           pnpm install --frozen-lockfile
 
-      - name: Build
+      - name: Build wheel from committed checkout
+        if: matrix.label == 'phase2'
         run: |
           test -z "$(git status --porcelain)"
+          python3 -m venv ${{github.workspace}}/.wheel-venv
+          ${{github.workspace}}/.wheel-venv/bin/python -m pip install --upgrade pip setuptools wheel
+          mkdir -p ${{github.workspace}}/build/wheel
+          ${{github.workspace}}/.wheel-venv/bin/python -m pip wheel . --no-deps --no-build-isolation --wheel-dir ${{github.workspace}}/build/wheel
+          ${{github.workspace}}/.wheel-venv/bin/python -m pip list
+          sha256sum ${{github.workspace}}/build/wheel/*.whl
+
+      - name: Upload wheel
+        if: matrix.label == 'phase2'
+        uses: actions/upload-artifact@v6
+        with:
+          name: mlcc-phase2-wheel-${{ github.sha }}
+          path: ${{github.workspace}}/build/wheel/*.whl
+          if-no-files-found: error
+
+      - name: Build
+        run: |
           echo "GIT_COMMIT=$(git rev-parse HEAD)"
           cat /etc/os-release
           python3 --version
@@ -80,24 +98,9 @@ jobs:
           cmake --build ${{github.workspace}}/build --config Release --target package -- -j 4
           cmake --build ${{github.workspace}}/build --config Release --target doc
           . ${{github.workspace}}/venv/bin/activate
+          python -c "import django, sys; print('Python', sys.version); print('Django', django.get_version())"
           echo "PATH=$PATH" >> $GITHUB_ENV
           echo "VIRTUAL_ENV=$VIRTUAL_ENV" >> $GITHUB_ENV
-
-      - name: Build wheel from committed checkout
-        if: matrix.label == 'phase2'
-        run: |
-          mkdir -p ${{github.workspace}}/build/wheel
-          python -m pip wheel . --no-deps --no-build-isolation --wheel-dir ${{github.workspace}}/build/wheel
-          python -c "import django, sys; print('Python', sys.version); print('Django', django.get_version())"
-          sha256sum ${{github.workspace}}/build/wheel/*.whl
-
-      - name: Upload wheel
-        if: matrix.label == 'phase2'
-        uses: actions/upload-artifact@v6
-        with:
-          name: mlcc-phase2-wheel-${{ github.sha }}
-          path: ${{github.workspace}}/build/wheel/*.whl
-          if-no-files-found: error
 
       - name: Test
         working-directory: ${{github.workspace}}

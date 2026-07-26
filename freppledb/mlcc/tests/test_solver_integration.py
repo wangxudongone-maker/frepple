@@ -1,3 +1,4 @@
+import hashlib
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from time import perf_counter
@@ -44,10 +45,29 @@ class ValidSolverDemoIntegrationTest(TestCase):
         second, _, _ = build_and_validate(
             horizon_start=DEMO_ORIGIN, source=VALID_SOURCE
         )
-        self.assertEqual(planning_instance_json(first), planning_instance_json(second))
+        first_json = planning_instance_json(first)
+        self.assertEqual(first_json, planning_instance_json(second))
         self.assertEqual(
             planning_instance_fingerprint(first), planning_instance_fingerprint(second)
         )
+        self.assertEqual(
+            planning_instance_fingerprint(first),
+            hashlib.sha256(first_json.encode("utf-8")).hexdigest(),
+        )
+
+    def test_valid_demo_can_be_loaded_twice_without_business_drift(self):
+        loader = SolverDemoLoader()
+        loader.load_valid(100)
+        first, first_report, _ = build_and_validate(
+            horizon_start=DEMO_ORIGIN, source=VALID_SOURCE
+        )
+        loader.load_valid(100)
+        second, second_report, _ = build_and_validate(
+            horizon_start=DEMO_ORIGIN, source=VALID_SOURCE
+        )
+        self.assertEqual(first_report.blocker_count, 0)
+        self.assertEqual(second_report.blocker_count, 0)
+        self.assertEqual(planning_instance_json(first), planning_instance_json(second))
 
     def test_management_command_writes_instance(self):
         with TemporaryDirectory() as directory:
@@ -94,7 +114,7 @@ class InvalidSolverDemoIntegrationTest(TestCase):
         )
         actual = {item.code for item in report.issues}
         expected = {f"MLCC-P{number:03d}" for number in range(1, 17)}
-        self.assertTrue(expected.issubset(actual), expected - actual)
+        self.assertEqual(actual, expected)
         self.assertGreater(report.blocker_count, 0)
         self.assertFalse(report.can_start_solver)
 

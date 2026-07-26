@@ -21,7 +21,16 @@ permissions:
 
 jobs:
   build:
+    name: build-${{ matrix.label }}
     runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: phase1-baseline
+            ref: f7f538cef7eaa404480e1f385feb9f89067c44d6
+          - label: phase2
+            ref: ${{ github.sha }}
     services:
       postgres:
         image: postgres:16
@@ -41,6 +50,8 @@ jobs:
       - name: Checking out source code
         uses: actions/checkout@v6
         with:
+          ref: ${{ matrix.ref }}
+          fetch-depth: 0
           submodules: recursive
 
       - name: Set up Nodes
@@ -55,6 +66,14 @@ jobs:
 
       - name: Build
         run: |
+          test -z "$(git status --porcelain)"
+          echo "GIT_COMMIT=$(git rev-parse HEAD)"
+          cat /etc/os-release
+          python3 --version
+          g++ --version
+          cmake --version
+          pg_config --version
+          psql --version
           git submodule update --remote --checkout --force
           grunt
           cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=Release
@@ -64,27 +83,46 @@ jobs:
           echo "PATH=$PATH" >> $GITHUB_ENV
           echo "VIRTUAL_ENV=$VIRTUAL_ENV" >> $GITHUB_ENV
 
+      - name: Build wheel from committed checkout
+        if: matrix.label == 'phase2'
+        run: |
+          mkdir -p ${{github.workspace}}/build/wheel
+          python -m pip wheel . --no-deps --no-build-isolation --wheel-dir ${{github.workspace}}/build/wheel
+          python -c "import django, sys; print('Python', sys.version); print('Django', django.get_version())"
+          sha256sum ${{github.workspace}}/build/wheel/*.whl
+
+      - name: Upload wheel
+        if: matrix.label == 'phase2'
+        uses: actions/upload-artifact@v6
+        with:
+          name: mlcc-phase2-wheel-${{ github.sha }}
+          path: ${{github.workspace}}/build/wheel/*.whl
+          if-no-files-found: error
+
       - name: Test
         working-directory: ${{github.workspace}}
         run: |
           export POSTGRES_HOST=localhost
           export POSTGRES_PORT=5432
           export FREPPLE_DATE_STYLE="day-month-year"
-          ./test/runtest.py
-          ./frepplectl.py test freppledb --verbosity=2
+          mkdir -p logs
+          python frepplectl.py check
+          python frepplectl.py makemigrations --check --dry-run mlcc
+          python test/runtest.py
+          python frepplectl.py test freppledb --verbosity=2
 
       - name: Test uninstalling apps
         working-directory: ${{github.workspace}}
         run: |
           export POSTGRES_HOST=localhost
           export POSTGRES_PORT=5432
-          ./frepplectl.py createdatabase --noinput
-          ./frepplectl.py migrate
-          ./frepplectl.py migrate forecast zero
-          ./frepplectl.py migrate wizard zero
-          ./frepplectl.py migrate metrics zero
-          ./frepplectl.py migrate reportmanager zero
-          ./frepplectl.py migrate executesql zero
+          python frepplectl.py createdatabase --noinput
+          python frepplectl.py migrate
+          python frepplectl.py migrate forecast zero
+          python frepplectl.py migrate wizard zero
+          python frepplectl.py migrate metrics zero
+          python frepplectl.py migrate reportmanager zero
+          python frepplectl.py migrate executesql zero
 
       - name: "Keep logs"
         uses: actions/upload-artifact@v6
@@ -95,6 +133,7 @@ jobs:
           retention-days: 1
 
       - uses: stefanzweifel/git-auto-commit-action@v7
+        if: matrix.label == 'phase2'
         with:
           commit_message: Grunt to compile and minify css and javascript files
           file_pattern: "*.min.* *main.js"

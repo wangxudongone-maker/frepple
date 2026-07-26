@@ -3,7 +3,12 @@ from django.test import TestCase
 from rest_framework.test import APIRequestFactory, force_authenticate
 
 from freppledb.common.models import User
-from freppledb.mlcc.demo import DEMO_ORIGIN, VALID_SOURCE, SolverDemoLoader
+from freppledb.mlcc.demo import (
+    DEMO_ORIGIN,
+    INVALID_SOURCE,
+    VALID_SOURCE,
+    SolverDemoLoader,
+)
 from freppledb.mlcc.models import MlccPrecheckRun
 from freppledb.mlcc.solver.api import (
     MlccPlanningInstanceAPI,
@@ -94,6 +99,31 @@ class SolverAPITest(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["status"], "passed")
         self.assertEqual(response.data["issues"], [])
+
+    def test_invalid_precheck_filters_by_public_code_and_links_source_data(self):
+        SolverDemoLoader().load_invalid()
+        request = self.request(
+            "post",
+            "/api/mlcc/precheck/",
+            data={**self.payload, "source": INVALID_SOURCE},
+        )
+        response = MlccPrecheckAPI.as_view()(request)
+        self.assertEqual(response.status_code, 201)
+        self.assertFalse(response.data["can_start_solver"])
+        run_id = response.data["run_id"]
+
+        request = self.request(
+            "get", f"/api/mlcc/precheck/{run_id}/?code=MLCC-P001"
+        )
+        response = MlccPrecheckResultAPI.as_view()(request, pk=run_id)
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["issues"])
+        self.assertTrue(
+            all(item["code"] == "MLCC-P001" for item in response.data["issues"])
+        )
+        self.assertTrue(
+            all(item["object_url"] for item in response.data["issues"])
+        )
 
     def test_invalid_api_options_return_400(self):
         request = self.request(

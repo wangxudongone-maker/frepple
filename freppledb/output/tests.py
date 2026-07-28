@@ -22,6 +22,7 @@
 #
 
 from django.test import TestCase
+from django.utils.translation import gettext as _
 
 from freppledb.common.tests import checkResponse
 
@@ -81,7 +82,7 @@ class OutputTest(TestCase):
     # Demand
     def test_output_demand(self):
         response = self.client.get("/demand/")
-        self.assertContains(response, "Demand report")
+        self.assertContains(response, _("Demand report"))
         self.assertEqual(response.status_code, 200)
         response = self.client.get("/demand/?format=csvlist")
         checkResponse(self, response)
@@ -191,4 +192,3 @@ class OutputTest(TestCase):
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
         )
-

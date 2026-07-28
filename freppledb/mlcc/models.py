@@ -484,7 +484,7 @@ class MlccFurnaceLoad(ValidatedAuditModel):
         decimal_places=8,
         default=Decimal("0"),
     )
-    load_unit = models.CharField(_("load unit"), max_length=40, default="")
+    load_unit = models.CharField(_("load unit"), max_length=40, default="", blank=True)
     frozen = models.BooleanField(_("frozen"), default=False)
     details = models.JSONField(_("details"), default=dict, blank=True)
 
@@ -641,7 +641,7 @@ class MlccFurnaceLoadItem(ValidatedAuditModel):
         validators=[MinValueValidator(Decimal("0.00000001"))],
     )
     sequence = models.PositiveIntegerField(_("sequence"), default=1)
-    load_unit = models.CharField(_("load unit"), max_length=40, default="")
+    load_unit = models.CharField(_("load unit"), max_length=40, default="", blank=True)
     conversion_trace = models.JSONField(_("conversion trace"), default=dict, blank=True)
 
     def __str__(self):

@@ -174,7 +174,9 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name="mlccfurnaceload",
             name="load_unit",
-            field=models.CharField(default="", max_length=40, verbose_name="load unit"),
+            field=models.CharField(
+                blank=True, default="", max_length=40, verbose_name="load unit"
+            ),
         ),
         migrations.AddField(
             model_name="mlccfurnaceload",
@@ -196,7 +198,9 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name="mlccfurnaceloaditem",
             name="load_unit",
-            field=models.CharField(default="", max_length=40, verbose_name="load unit"),
+            field=models.CharField(
+                blank=True, default="", max_length=40, verbose_name="load unit"
+            ),
         ),
         migrations.AddField(
             model_name="mlccfurnaceloaditem",

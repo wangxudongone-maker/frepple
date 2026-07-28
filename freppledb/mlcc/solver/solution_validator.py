@@ -6,9 +6,11 @@ from collections import defaultdict
 from dataclasses import dataclass
 
 from .constraints import (
+    FURNACE_STAGES,
     available_segments,
     capability_index,
     eligible_resources,
+    load_requirement,
     material_ready_minute,
     schedulable_steps,
 )
@@ -35,7 +37,7 @@ class SolutionValidationReport:
 
 
 class SchedulingSolutionValidator:
-    """Validate all phase-3A hard constraints using data only."""
+    """Validate phase-3B hard constraints using data only."""
 
     def validate(self, instance, solution):
         violations = []
@@ -92,18 +94,14 @@ class SchedulingSolutionValidator:
                     task_id,
                     "Assignment is outside the planning horizon.",
                 )
-            if (
-                assignment.end_minute - assignment.start_minute
-                != step.duration_minutes
-            ):
+            if assignment.end_minute - assignment.start_minute != step.duration_minutes:
                 add(
                     "MLCC-SV008",
                     task_id,
                     "Assignment duration differs from standard duration.",
                 )
             if resource and not any(
-                start <= assignment.start_minute
-                and assignment.end_minute <= end
+                start <= assignment.start_minute and assignment.end_minute <= end
                 for start, end in available_segments(
                     resource, instance.window.horizon_minutes
                 )
@@ -133,8 +131,12 @@ class SchedulingSolutionValidator:
             by_resource[assignment.resource_id].append(assignment)
 
         for resource_id, resource_assignments in by_resource.items():
+            distinct = {}
+            for item in resource_assignments:
+                key = item.furnace_load_id or f"task:{item.task_id}"
+                distinct.setdefault(key, item)
             ordered = sorted(
-                resource_assignments,
+                distinct.values(),
                 key=lambda item: (item.start_minute, item.end_minute, item.task_id),
             )
             for previous, current in zip(ordered, ordered[1:]):
@@ -143,6 +145,153 @@ class SchedulingSolutionValidator:
                         "MLCC-SV012",
                         resource_id,
                         f"Tasks {previous.task_id} and {current.task_id} overlap.",
+                    )
+
+        batches = {item.id: item for item in instance.batches}
+        recipes = {item.id: item for item in instance.recipes}
+        loads = {}
+        for load in solution.furnace_loads:
+            if load.load_id in loads:
+                add(
+                    "MLCC-SV017", load.load_id, "Furnace load identifier is duplicated."
+                )
+            loads[load.load_id] = load
+        furnace_task_ids = {
+            item.id for item in steps.values() if item.stage in FURNACE_STAGES
+        }
+        for task_id in sorted(furnace_task_ids):
+            assignment = assignments.get(task_id)
+            if assignment is None or not assignment.furnace_load_id:
+                add("MLCC-SV018", task_id, "Furnace task has no explicit furnace load.")
+            elif assignment.furnace_load_id not in loads:
+                add("MLCC-SV019", task_id, "Furnace task references an unknown load.")
+            elif task_id not in loads[assignment.furnace_load_id].member_task_ids:
+                add(
+                    "MLCC-SV022",
+                    task_id,
+                    "Furnace task is absent from its referenced load membership.",
+                )
+
+        frozen = {item.id: item for item in instance.frozen_furnace_loads}
+        for load_id, load in sorted(loads.items()):
+            member_ids = tuple(sorted(load.member_task_ids))
+            if not member_ids:
+                add("MLCC-SV020", load_id, "Furnace load has no members.")
+                continue
+            member_assignments = [assignments.get(item) for item in member_ids]
+            if any(item is None for item in member_assignments):
+                add("MLCC-SV021", load_id, "Furnace load references an unknown task.")
+                continue
+            if any(
+                item.furnace_load_id != load_id
+                or item.resource_id != load.equipment_id
+                or item.start_minute != load.start_minute
+                or item.end_minute != load.end_minute
+                for item in member_assignments
+            ):
+                add("MLCC-SV022", load_id, "Furnace members are not synchronized.")
+            member_steps = [steps[item] for item in member_ids]
+            if any(item.stage != load.operation_type for item in member_steps):
+                add("MLCC-SV023", load_id, "Furnace load mixes operation types.")
+            if any(
+                recipes[item.recipe_id].furnace_program_key != load.furnace_program_key
+                for item in member_steps
+            ):
+                add("MLCC-SV024", load_id, "Furnace load mixes executable programs.")
+            requirements = [
+                load_requirement(item, load.equipment_id) for item in member_steps
+            ]
+            if any(
+                item is None
+                or item.quantity is None
+                or item.load_unit != load.load_unit
+                for item in requirements
+            ):
+                add("MLCC-SV025", load_id, "Load conversion is missing or inexact.")
+            else:
+                expected = sum(item.quantity for item in requirements)
+                if (
+                    expected != load.loaded_quantity
+                    or load.loaded_quantity > load.capacity
+                    or load.capacity <= 0
+                ):
+                    add("MLCC-SV026", load_id, "Furnace capacity is violated.")
+            for index, left in enumerate(member_steps):
+                for right in member_steps[index + 1 :]:
+                    left_recipe = recipes[left.recipe_id]
+                    right_recipe = recipes[right.recipe_id]
+                    pair = tuple(
+                        sorted(
+                            (
+                                batches[left.batch_id].product_family.strip(),
+                                batches[right.batch_id].product_family.strip(),
+                            )
+                        )
+                    )
+                    matches = [
+                        rule
+                        for rule in instance.compatibility_rules
+                        if rule.enabled
+                        and rule.stage == load.operation_type
+                        and tuple(
+                            sorted(
+                                (
+                                    rule.family_a.strip(),
+                                    rule.family_b.strip(),
+                                )
+                            )
+                        )
+                        == pair
+                    ]
+                    if len(matches) == 1:
+                        compatible = matches[0].rule_type == "allow"
+                    else:
+                        compatible = bool(
+                            left_recipe.compatibility_group
+                            and left_recipe.compatibility_group
+                            == right_recipe.compatibility_group
+                        )
+                    if not compatible:
+                        add(
+                            "MLCC-SV027",
+                            load_id,
+                            f"Members {left.id} and {right.id} are not compatible.",
+                        )
+            for step in member_steps:
+                if batches[step.batch_id].quality_hold:
+                    add("MLCC-SV028", step.id, "Quality-held batch was scheduled.")
+                trace = load.conversion_evidence.get(step.batch_id)
+                if not trace or trace.get("load_quantity") is None:
+                    add("MLCC-SV029", step.id, "Load conversion trace is missing.")
+            original = frozen.get(load_id)
+            if original and (
+                not load.frozen
+                or load.equipment_id != original.resource_id
+                or load.start_minute != original.start_minute
+                or load.end_minute != original.end_minute
+                or load.recipe_id != original.recipe_id
+                or load.furnace_program_key != original.furnace_program_key
+                or load.capacity != original.capacity
+                or load.loaded_quantity != original.loaded_quantity
+                or load.load_unit != original.load_unit
+                or member_ids != tuple(sorted(original.member_task_ids))
+            ):
+                add("MLCC-SV030", load_id, "Frozen furnace load was changed.")
+
+        load_intervals = defaultdict(list)
+        for load in loads.values():
+            load_intervals[load.equipment_id].append(load)
+        for resource_id, values in load_intervals.items():
+            ordered = sorted(
+                values,
+                key=lambda item: (item.start_minute, item.end_minute, item.load_id),
+            )
+            for previous, current in zip(ordered, ordered[1:]):
+                if previous.end_minute > current.start_minute:
+                    add(
+                        "MLCC-SV031",
+                        resource_id,
+                        f"Furnace loads {previous.load_id} and {current.load_id} overlap.",
                     )
 
         for task_id, step in steps.items():
@@ -174,7 +323,6 @@ class SchedulingSolutionValidator:
                     )
 
         solution_orders = {item.order_id: item for item in solution.orders}
-        batches = {item.id: item for item in instance.batches}
         final_ends = defaultdict(list)
         for batch_id in {step.batch_id for step in steps.values()}:
             batch_steps = [step for step in steps.values() if step.batch_id == batch_id]

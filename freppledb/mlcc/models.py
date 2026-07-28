@@ -56,6 +56,16 @@ class MlccRecipe(ValidatedAuditModel):
         on_delete=models.PROTECT,
     )
     active = models.BooleanField(_("active"), default=True)
+    furnace_program_key = models.CharField(
+        _("furnace program key"), max_length=100, null=True, blank=True, db_index=True
+    )
+    compatibility_group = models.CharField(
+        _("certified compatibility group"),
+        max_length=100,
+        null=True,
+        blank=True,
+        db_index=True,
+    )
     parameters = models.JSONField(_("parameters"), default=dict, blank=True)
 
     def __str__(self):
@@ -86,6 +96,62 @@ class MlccRecipe(ValidatedAuditModel):
         ]
         verbose_name = _("MLCC recipe")
         verbose_name_plural = _("MLCC recipes")
+
+
+class MlccLoadUnitConversion(ValidatedAuditModel):
+    id = models.AutoField(_("identifier"), primary_key=True)
+    item = models.ForeignKey(
+        "input.Item",
+        verbose_name=_("item"),
+        related_name="mlcc_load_unit_conversions",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+    )
+    from_unit = models.CharField(_("from unit"), max_length=40)
+    to_unit = models.CharField(_("to unit"), max_length=40)
+    numerator = models.PositiveBigIntegerField(_("numerator"))
+    denominator = models.PositiveBigIntegerField(_("denominator"))
+    enabled = models.BooleanField(_("enabled"), default=True)
+
+    def __str__(self):
+        return (
+            f"{self.item_id or '*'}: {self.from_unit} * "
+            f"{self.numerator}/{self.denominator} = {self.to_unit}"
+        )
+
+    def clean(self):
+        self.from_unit = (self.from_unit or "").strip()
+        self.to_unit = (self.to_unit or "").strip()
+        if not self.from_unit or not self.to_unit:
+            raise ValidationError(_("Both load units are required."))
+        if self.numerator <= 0 or self.denominator <= 0:
+            raise ValidationError(_("Load conversion ratio must be positive."))
+        if self.from_unit == self.to_unit and self.numerator != self.denominator:
+            raise ValidationError(
+                _("An identity unit conversion must have a ratio of one.")
+            )
+
+    class Meta(AuditModel.Meta):
+        db_table = "mlcc_load_unit_conversion"
+        ordering = ("item", "from_unit", "to_unit")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("item", "from_unit", "to_unit"),
+                name="mlcc_load_unit_conversion_uniq",
+            ),
+            models.UniqueConstraint(
+                fields=("from_unit", "to_unit"),
+                condition=Q(item__isnull=True),
+                name="mlcc_load_unit_conversion_generic_uniq",
+            ),
+            models.CheckConstraint(
+                check=Q(numerator__gt=0) & Q(denominator__gt=0),
+                name="mlcc_load_unit_conversion_positive",
+            ),
+        ]
+        verbose_name = _("MLCC load unit conversion")
+        verbose_name_plural = _("MLCC load unit conversions")
 
 
 class MlccEquipmentCapability(ValidatedAuditModel):
@@ -368,6 +434,7 @@ class MlccFurnaceLoad(ValidatedAuditModel):
         ("running", _("running")),
         ("complete", _("complete")),
         ("cancelled", _("cancelled")),
+        ("proposed", _("proposed")),
     )
 
     id = models.AutoField(_("identifier"), primary_key=True)
@@ -386,6 +453,20 @@ class MlccFurnaceLoad(ValidatedAuditModel):
         blank=True,
         on_delete=models.PROTECT,
     )
+    run = models.ForeignKey(
+        "mlcc.MlccScheduleRun",
+        verbose_name=_("schedule run"),
+        related_name="furnace_loads",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+    )
+    operation_type = models.CharField(
+        _("operation type"), max_length=30, choices=PROCESS_STAGES, default="sintering"
+    )
+    furnace_program_key = models.CharField(
+        _("furnace program key"), max_length=100, null=True, blank=True
+    )
     planned_start = models.DateTimeField(_("planned start"), null=True, blank=True)
     planned_end = models.DateTimeField(_("planned end"), null=True, blank=True)
     status = models.CharField(
@@ -397,6 +478,15 @@ class MlccFurnaceLoad(ValidatedAuditModel):
         decimal_places=8,
         validators=[MinValueValidator(Decimal("0.00000001"))],
     )
+    loaded_quantity = models.DecimalField(
+        _("loaded quantity"),
+        max_digits=20,
+        decimal_places=8,
+        default=Decimal("0"),
+    )
+    load_unit = models.CharField(_("load unit"), max_length=40, default="")
+    frozen = models.BooleanField(_("frozen"), default=False)
+    details = models.JSONField(_("details"), default=dict, blank=True)
 
     def __str__(self):
         return self.reference
@@ -418,6 +508,14 @@ class MlccFurnaceLoad(ValidatedAuditModel):
             raise ValidationError(
                 {"planned_end": _("Planned end must be after planned start.")}
             )
+        if self.loaded_quantity < 0 or self.loaded_quantity > self.capacity:
+            raise ValidationError(
+                {"loaded_quantity": _("Loaded quantity must fit furnace capacity.")}
+            )
+        if self.status == "proposed" and not self.run_id:
+            raise ValidationError(
+                {"run": _("A proposed furnace load must belong to a schedule run.")}
+            )
 
     class Meta(AuditModel.Meta):
         db_table = "mlcc_furnace_load"
@@ -425,7 +523,12 @@ class MlccFurnaceLoad(ValidatedAuditModel):
         constraints = [
             models.CheckConstraint(
                 check=Q(capacity__gt=0), name="mlcc_furnace_load_capacity_gt_0"
-            )
+            ),
+            models.CheckConstraint(
+                check=Q(loaded_quantity__gte=0)
+                & Q(loaded_quantity__lte=models.F("capacity")),
+                name="mlcc_furnace_load_loaded_lte_capacity",
+            ),
         ]
         verbose_name = _("MLCC furnace load")
         verbose_name_plural = _("MLCC furnace loads")
@@ -538,6 +641,8 @@ class MlccFurnaceLoadItem(ValidatedAuditModel):
         validators=[MinValueValidator(Decimal("0.00000001"))],
     )
     sequence = models.PositiveIntegerField(_("sequence"), default=1)
+    load_unit = models.CharField(_("load unit"), max_length=40, default="")
+    conversion_trace = models.JSONField(_("conversion trace"), default=dict, blank=True)
 
     def __str__(self):
         return f"{self.furnace_load_id}: {self.batch_code}"

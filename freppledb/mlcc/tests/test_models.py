@@ -11,6 +11,7 @@ from freppledb.mlcc.models import (
     MlccEquipmentCapability,
     MlccFurnaceLoad,
     MlccFurnaceLoadItem,
+    MlccLoadUnitConversion,
     MlccQualityHold,
     MlccRecipe,
     MlccScheduleResult,
@@ -136,3 +137,48 @@ class MlccValidationTest(MlccTestDataMixin, TestCase):
                 batch_code="MLCC-BATCH-TEST",
                 quantity=Decimal("6"),
             )
+
+    def test_load_conversion_requires_an_exact_positive_ratio(self):
+        with self.assertRaises(ValidationError):
+            MlccLoadUnitConversion.objects.create(
+                item=self.item,
+                from_unit="piece",
+                to_unit="tray",
+                numerator=0,
+                denominator=1,
+            )
+        with self.assertRaises(ValidationError):
+            MlccLoadUnitConversion.objects.create(
+                item=self.item,
+                from_unit="tray",
+                to_unit="tray",
+                numerator=1,
+                denominator=2,
+            )
+
+    def test_proposed_furnace_load_requires_schedule_run(self):
+        with self.assertRaises(ValidationError):
+            MlccFurnaceLoad.objects.create(
+                reference="LOAD-PROPOSED-NO-RUN",
+                resource=self.resource,
+                capacity=Decimal("5"),
+                loaded_quantity=Decimal("3"),
+                load_unit="tray",
+                status="proposed",
+            )
+        now = timezone.now()
+        run = MlccScheduleRun.objects.create(
+            name="RUN-PROPOSED",
+            horizon_start=now,
+            horizon_end=now + timedelta(days=1),
+        )
+        load = MlccFurnaceLoad.objects.create(
+            reference="LOAD-PROPOSED",
+            run=run,
+            resource=self.resource,
+            capacity=Decimal("5"),
+            loaded_quantity=Decimal("3"),
+            load_unit="tray",
+            status="proposed",
+        )
+        self.assertEqual(load.run_id, run.pk)

@@ -12,6 +12,8 @@ from .schema import (
     CustomerOrder,
     Equipment,
     EquipmentCapability,
+    FrozenFurnaceLoad,
+    FurnaceLoadRequirement,
     MaterialAvailability,
     PlanningInstance,
     PlanningWindow,
@@ -88,9 +90,7 @@ def planning_instance_from_dict(payload):
                 batch_id=str(item["batch_id"]),
                 quantity=_decimal(item["quantity"]),
                 due_minute=(
-                    None
-                    if item.get("due_minute") is None
-                    else int(item["due_minute"])
+                    None if item.get("due_minute") is None else int(item["due_minute"])
                 ),
                 priority=int(item["priority"]),
             )
@@ -104,9 +104,7 @@ def planning_instance_from_dict(payload):
                 product_family=str(item["product_family"]),
                 quantity=_decimal(item["quantity"]),
                 due_minute=(
-                    None
-                    if item.get("due_minute") is None
-                    else int(item["due_minute"])
+                    None if item.get("due_minute") is None else int(item["due_minute"])
                 ),
                 priority=int(item["priority"]),
                 quality_hold=bool(item["quality_hold"]),
@@ -148,6 +146,32 @@ def planning_instance_from_dict(payload):
                     None
                     if item.get("original_end_minute") is None
                     else int(item["original_end_minute"])
+                ),
+                recipe_resolution=str(item.get("recipe_resolution", "resolved")),
+                load_requirements=tuple(
+                    FurnaceLoadRequirement(
+                        resource_id=str(requirement["resource_id"]),
+                        quantity=(
+                            None
+                            if requirement.get("quantity") is None
+                            else int(requirement["quantity"])
+                        ),
+                        load_unit=requirement.get("load_unit"),
+                        source_quantity=_decimal(requirement["source_quantity"]),
+                        source_unit=requirement.get("source_unit"),
+                        conversion_id=requirement.get("conversion_id"),
+                        conversion_numerator=(
+                            None
+                            if requirement.get("conversion_numerator") is None
+                            else int(requirement["conversion_numerator"])
+                        ),
+                        conversion_denominator=(
+                            None
+                            if requirement.get("conversion_denominator") is None
+                            else int(requirement["conversion_denominator"])
+                        ),
+                    )
+                    for requirement in item.get("load_requirements", ())
                 ),
             )
             for item in payload.get("steps", ())
@@ -209,6 +233,8 @@ def planning_instance_from_dict(payload):
                 active=bool(item["active"]),
                 setup_family=item.get("setup_family"),
                 parameters=dict(item.get("parameters", {})),
+                furnace_program_key=item.get("furnace_program_key"),
+                compatibility_group=item.get("compatibility_group"),
             )
             for item in payload.get("recipes", ())
         ),
@@ -248,6 +274,23 @@ def planning_instance_from_dict(payload):
                 kind=str(item["kind"]),
             )
             for item in payload.get("materials", ())
+        ),
+        frozen_furnace_loads=tuple(
+            FrozenFurnaceLoad(
+                id=str(item["id"]),
+                stage=str(item["stage"]),
+                resource_id=str(item["resource_id"]),
+                recipe_id=str(item["recipe_id"]),
+                furnace_program_key=str(item["furnace_program_key"]),
+                start_minute=int(item["start_minute"]),
+                end_minute=int(item["end_minute"]),
+                capacity=int(item["capacity"]),
+                loaded_quantity=int(item["loaded_quantity"]),
+                load_unit=str(item["load_unit"]),
+                member_task_ids=tuple(item.get("member_task_ids", ())),
+                status=str(item["status"]),
+            )
+            for item in payload.get("frozen_furnace_loads", ())
         ),
     )
 

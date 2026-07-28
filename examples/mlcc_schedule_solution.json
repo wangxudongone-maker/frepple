@@ -1,102 +1,241 @@
 {
   "assignments": [
     {
-      "batch_id": "batch:MLCC-EXAMPLE-0001",
-      "end_minute": 4380,
+      "batch_id": "batch:B001",
+      "end_minute": 720,
       "frozen": false,
-      "resource_id": "resource:STACK-01",
-      "stage": "stacking",
-      "start_minute": 4320,
-      "task_id": "task:MO-EXAMPLE-1"
-    },
-    {
-      "batch_id": "batch:MLCC-EXAMPLE-0001",
-      "end_minute": 4485,
-      "frozen": false,
-      "resource_id": "resource:LAM-01",
-      "stage": "lamination",
-      "start_minute": 4425,
-      "task_id": "task:MO-EXAMPLE-2"
-    },
-    {
-      "batch_id": "batch:MLCC-EXAMPLE-0001",
-      "end_minute": 4530,
-      "frozen": false,
-      "resource_id": "resource:CUT-01",
-      "stage": "cutting",
-      "start_minute": 4485,
-      "task_id": "task:MO-EXAMPLE-3"
-    },
-    {
-      "batch_id": "batch:MLCC-EXAMPLE-0001",
-      "end_minute": 4890,
-      "frozen": false,
+      "furnace_load_id": "furnace_load:debinding:DEB-V1:0001",
       "resource_id": "resource:DEB-01",
       "stage": "debinding",
-      "start_minute": 4530,
-      "task_id": "task:MO-EXAMPLE-4"
+      "start_minute": 360,
+      "task_id": "task:B001-DEB"
     },
     {
-      "batch_id": "batch:MLCC-EXAMPLE-0001",
-      "end_minute": 5370,
+      "batch_id": "batch:B002",
+      "end_minute": 720,
       "frozen": false,
+      "furnace_load_id": "furnace_load:debinding:DEB-V1:0001",
+      "resource_id": "resource:DEB-01",
+      "stage": "debinding",
+      "start_minute": 360,
+      "task_id": "task:B002-DEB"
+    },
+    {
+      "batch_id": "batch:B001",
+      "end_minute": 1200,
+      "frozen": false,
+      "furnace_load_id": "furnace_load:sintering:SIN-V1:0001",
       "resource_id": "resource:SIN-01",
       "stage": "sintering",
-      "start_minute": 4890,
-      "task_id": "task:MO-EXAMPLE-5"
+      "start_minute": 720,
+      "task_id": "task:B001-SIN"
+    },
+    {
+      "batch_id": "batch:B002",
+      "end_minute": 1200,
+      "frozen": false,
+      "furnace_load_id": "furnace_load:sintering:SIN-V1:0001",
+      "resource_id": "resource:SIN-01",
+      "stage": "sintering",
+      "start_minute": 720,
+      "task_id": "task:B002-SIN"
     }
   ],
-  "input_fingerprint": "3eac3dd26e8cd500b5a4fbbb9b3eb5970fbc14114d205438b359f576cb176b89",
+  "furnace_loads": [
+    {
+      "capacity": 20,
+      "compatibility_evidence": {
+        "batch:B001": [
+          "batch:B002:pair_rule:compatibility:X7R-X7R-DEB"
+        ],
+        "batch:B002": [
+          "batch:B001:pair_rule:compatibility:X7R-X7R-DEB"
+        ]
+      },
+      "constraint_summary": {
+        "capacity_feasible": true,
+        "pairwise_compatible": true,
+        "synchronized": true
+      },
+      "conversion_evidence": {
+        "batch:B001": {
+          "conversion_id": "conversion:piece-tray",
+          "denominator": 100,
+          "load_quantity": 5,
+          "load_unit": "tray",
+          "numerator": 1,
+          "source_quantity": "500",
+          "source_unit": "piece"
+        },
+        "batch:B002": {
+          "conversion_id": "conversion:piece-tray",
+          "denominator": 100,
+          "load_quantity": 5,
+          "load_unit": "tray",
+          "numerator": 1,
+          "source_quantity": "500",
+          "source_unit": "piece"
+        }
+      },
+      "end_minute": 720,
+      "equipment_id": "resource:DEB-01",
+      "frozen": false,
+      "furnace_program_key": "DEB-V1",
+      "load_id": "furnace_load:debinding:DEB-V1:0001",
+      "load_unit": "tray",
+      "loaded_quantity": 10,
+      "member_batch_ids": [
+        "batch:B001",
+        "batch:B002"
+      ],
+      "member_task_ids": [
+        "task:B001-DEB",
+        "task:B002-DEB"
+      ],
+      "operation_type": "debinding",
+      "recipe_id": "recipe:DEB:V1",
+      "recipe_version": "V1",
+      "start_minute": 360,
+      "status": "proposed",
+      "utilization": "0.5"
+    },
+    {
+      "capacity": 20,
+      "compatibility_evidence": {
+        "batch:B001": [
+          "batch:B002:certified_group:X7R-SIN-V1"
+        ],
+        "batch:B002": [
+          "batch:B001:certified_group:X7R-SIN-V1"
+        ]
+      },
+      "constraint_summary": {
+        "capacity_feasible": true,
+        "pairwise_compatible": true,
+        "synchronized": true
+      },
+      "conversion_evidence": {
+        "batch:B001": {
+          "conversion_id": "identity",
+          "denominator": 1,
+          "load_quantity": 5,
+          "load_unit": "tray",
+          "numerator": 1,
+          "source_quantity": "5",
+          "source_unit": "tray"
+        },
+        "batch:B002": {
+          "conversion_id": "identity",
+          "denominator": 1,
+          "load_quantity": 5,
+          "load_unit": "tray",
+          "numerator": 1,
+          "source_quantity": "5",
+          "source_unit": "tray"
+        }
+      },
+      "end_minute": 1200,
+      "equipment_id": "resource:SIN-01",
+      "frozen": false,
+      "furnace_program_key": "SIN-V1",
+      "load_id": "furnace_load:sintering:SIN-V1:0001",
+      "load_unit": "tray",
+      "loaded_quantity": 10,
+      "member_batch_ids": [
+        "batch:B001",
+        "batch:B002"
+      ],
+      "member_task_ids": [
+        "task:B001-SIN",
+        "task:B002-SIN"
+      ],
+      "operation_type": "sintering",
+      "recipe_id": "recipe:SIN:V1",
+      "recipe_version": "V1",
+      "start_minute": 720,
+      "status": "proposed",
+      "utilization": "0.5"
+    }
+  ],
+  "input_fingerprint": "5fb6cc2e76cd73c65c860a848adf6e904597270950520d04068120b0e8ba9f65",
   "message": "",
+  "metric_deltas": {
+    "furnace_load_count": -2,
+    "makespan": -480,
+    "utilization_ppm": {
+      "average_ppm": 250000,
+      "p50_ppm": 250000,
+      "p90_ppm": 250000
+    },
+    "weighted_tardiness": 0
+  },
   "objective_stages": [
     {
       "best_bound": null,
       "name": "feasibility",
       "status": "OPTIMAL",
       "value": null,
-      "wall_time_seconds": 0.000898
+      "wall_time_seconds": 0.01
     },
     {
       "best_bound": 0.0,
       "name": "weighted_tardiness",
       "status": "OPTIMAL",
       "value": 0,
-      "wall_time_seconds": 0.000392
+      "wall_time_seconds": 0.01
     },
     {
-      "best_bound": 5370.0,
+      "best_bound": 2.0,
+      "name": "furnace_load_count",
+      "status": "OPTIMAL",
+      "value": 2,
+      "wall_time_seconds": 0.01
+    },
+    {
+      "best_bound": 1200.0,
       "name": "makespan",
       "status": "OPTIMAL",
-      "value": 5370,
-      "wall_time_seconds": 0.000369
+      "value": 1200,
+      "wall_time_seconds": 0.01
     }
   ],
   "objective_values": {
-    "makespan": 5370,
+    "furnace_load_count": 2,
+    "makespan": 1200,
     "weighted_tardiness": 0
   },
   "optimality_gap": 0.0,
-  "orders": [
-    {
-      "completion_minute": 5370,
-      "due_minute": 10080,
-      "order_id": "order:SO-EXAMPLE-0001",
-      "priority": 1,
-      "priority_weight": 1,
-      "tardiness_minutes": 0,
-      "weighted_tardiness": 0
-    }
-  ],
+  "orders": [],
   "parameters": {
-    "furnace_mode": "one_batch_per_run",
+    "furnace_mode": "multi_batch_loads",
     "log_search_progress": false,
-    "max_time_seconds": 5,
+    "max_time_seconds": 60.0,
     "num_search_workers": 1,
     "random_seed": 0
+  },
+  "phase3a_baseline_metrics": {
+    "furnace_load_count": 4,
+    "makespan": 1680,
+    "utilization": {
+      "average_ppm": 250000,
+      "p50_ppm": 250000,
+      "p90_ppm": 250000
+    },
+    "weighted_tardiness": 0
+  },
+  "phase3b_metrics": {
+    "furnace_load_count": 2,
+    "makespan": 1200,
+    "utilization": {
+      "average_ppm": 500000,
+      "p50_ppm": 500000,
+      "p90_ppm": 500000
+    },
+    "weighted_tardiness": 0
   },
   "schema_version": "mlcc-schedule-solution/v1",
   "solver_name": "Google OR-Tools CP-SAT",
   "solver_version": "9.10.4067",
   "status": "OPTIMAL",
-  "wall_time_seconds": 0.014824
+  "wall_time_seconds": 0.08
 }

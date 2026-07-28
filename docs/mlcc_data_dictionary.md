@@ -12,6 +12,7 @@
 | `resource` | `mlcc_equipment_group` | string | MLCC 设备组 |
 | `resource` | `mlcc_is_furnace` | boolean | 是否为炉设备 |
 | `resource` | `mlcc_nominal_capacity` | decimal | 标称容量 |
+| `resource` | `mlcc_load_unit` | string | 炉容量计量单位 |
 | `operation` | `mlcc_process_stage` | string | 叠层/层压/切割/排胶/烧结 |
 | `operation` | `mlcc_recipe_required` | boolean | 是否必须指定配方 |
 | `operation` | `mlcc_batch_required` | boolean | 是否必须追踪批次 |
@@ -19,12 +20,15 @@
 | `operationplan` | `mlcc_lot_number` | string | 生产批/工单批号 |
 | `operationplan` | `mlcc_recipe_version` | string | 执行配方版本 |
 | `operationplan` | `mlcc_schedulable` | boolean | 是否允许进入排程 |
+| `operationplan` | `mlcc_load_quantity` | decimal | 显式炉装载量 |
+| `operationplan` | `mlcc_load_unit` | string | 装载量来源单位 |
 
 ## 独立表
 
 | 模型 | 数据库表 | 主键/业务键 | 说明 |
 |---|---|---|---|
 | `MlccRecipe` | `mlcc_recipe` | `id`；`name + version` 唯一 | 工序配方、版本、生效期、参数 |
+| `MlccLoadUnitConversion` | `mlcc_load_unit_conversion` | 物料+来源单位+目标单位唯一 | 精确整数比例的装载单位换算 |
 | `MlccEquipmentCapability` | `mlcc_equipment_capability` | `id`；设备+工序+配方+物料唯一 | 设备能力矩阵与批量范围 |
 | `MlccCompatibilityRule` | `mlcc_compatibility_rule` | `id`；规则名唯一 | 产品族同炉允许/禁止规则 |
 | `MlccSetupMatrix` | `mlcc_setup_matrix` | `id`；设备+工序+前后配方唯一 | 配方切换时间和成本 |
@@ -41,7 +45,7 @@
 
 - `process_stage`：`stacking`、`lamination`、`cutting`、`debinding`、`sintering`。
 - 同炉规则：`allow`、`forbid`。
-- 炉次状态：`draft`、`ready`、`running`、`complete`、`cancelled`。
+- 炉次状态：`draft`、`ready`、`running`、`complete`、`cancelled`、`proposed`。
 - 质量冻结状态：`active`、`released`。
 - 排程运行状态：`draft`、`ready`、`running`、`complete`、`failed`。
 - 排程结果状态：`proposed`、`scheduled`、`blocked`、`not_schedulable`。
@@ -53,6 +57,7 @@
 | 资源 | 集合地址 | 单记录地址 |
 |---|---|---|
 | 配方 | `/api/mlcc/mlccrecipe/` | `/api/mlcc/mlccrecipe/{id}/` |
+| 装载单位换算 | `/api/mlcc/mlccloadunitconversion/` | `/api/mlcc/mlccloadunitconversion/{id}/` |
 | 设备能力 | `/api/mlcc/mlccequipmentcapability/` | `/api/mlcc/mlccequipmentcapability/{id}/` |
 | 同炉规则 | `/api/mlcc/mlcccompatibilityrule/` | `/api/mlcc/mlcccompatibilityrule/{id}/` |
 | 换型矩阵 | `/api/mlcc/mlccsetupmatrix/` | `/api/mlcc/mlccsetupmatrix/{id}/` |

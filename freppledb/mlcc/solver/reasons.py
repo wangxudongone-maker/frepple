@@ -143,6 +143,34 @@ REASONS = {
         "扩大排产周期，或调整订单交期和原计划时间。",
         "demand.due/operationplan.startdate/enddate",
     ),
+    "BATCH_EXCEEDS_ALL_FURNACES": ReasonDefinition(
+        "MLCC-P017",
+        Severity.BLOCKER,
+        "单批装载量超过全部候选炉的有效容量。",
+        "降低单批装载量，增加合格的大容量炉，或维护产品—设备能力上限。",
+        "operationplan.mlcc_load_quantity/resource.mlcc_nominal_capacity",
+    ),
+    "AMBIGUOUS_FURNACE_PROGRAM": ReasonDefinition(
+        "MLCC-P018",
+        Severity.BLOCKER,
+        "炉工序无法唯一确定可执行配方或炉程。",
+        "指定唯一配方版本，并为其维护明确的 furnace_program_key。",
+        "operationplan.mlcc_recipe_version/mlcc_recipe.furnace_program_key",
+    ),
+    "FROZEN_LOAD_MISMATCH": ReasonDefinition(
+        "MLCC-P019",
+        Severity.BLOCKER,
+        "冻结炉次的成员、容量、设备或配方与任务数据不一致。",
+        "恢复冻结炉次的原设备、原时间、原配方和原成员，或先解除冻结。",
+        "mlcc_furnace_load/mlcc_furnace_load_item",
+    ),
+    "INEXACT_LOAD_CONVERSION": ReasonDefinition(
+        "MLCC-P020",
+        Severity.BLOCKER,
+        "装载单位缺失、无法换算或换算结果不是精确整数。",
+        "维护显式单位及整数比例换算；如需小数容量，请改用更小的整数计量单位。",
+        "operationplan.mlcc_load_unit/mlcc_load_unit_conversion",
+    ),
 }
 
 

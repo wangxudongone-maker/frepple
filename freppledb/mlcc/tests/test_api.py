@@ -13,6 +13,7 @@ from freppledb.mlcc.serializers import (
     MlccEquipmentCapabilityAPI,
     MlccFurnaceLoadAPI,
     MlccFurnaceLoadItemAPI,
+    MlccLoadUnitConversionAPI,
     MlccQualityHoldAPI,
     MlccRecipeAPI,
     MlccScheduleResultAPI,
@@ -96,6 +97,7 @@ class MlccAPITest(MlccTestDataMixin, TestCase):
     def test_all_list_endpoints(self):
         endpoints = (
             ("mlccrecipe", MlccRecipeAPI),
+            ("mlccloadunitconversion", MlccLoadUnitConversionAPI),
             ("mlccequipmentcapability", MlccEquipmentCapabilityAPI),
             ("mlcccompatibilityrule", MlccCompatibilityRuleAPI),
             ("mlccsetupmatrix", MlccSetupMatrixAPI),

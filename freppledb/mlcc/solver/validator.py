@@ -56,6 +56,7 @@ class PlanningInstanceValidator:
         self._validate_dependencies()
         self._validate_quality_holds()
         self._validate_frozen_tasks()
+        self._validate_frozen_furnace_loads()
         self._validate_materials()
         self._validate_quantities()
         self._validate_waiting_times()
@@ -155,10 +156,15 @@ class PlanningInstanceValidator:
         for step in self.instance.steps:
             if step.stage not in ("debinding", "sintering"):
                 continue
+            if step.recipe_resolution == "ambiguous":
+                self._add("AMBIGUOUS_FURNACE_PROGRAM", "task", step.id)
+                continue
             if not step.recipe_id or step.recipe_id not in recipes:
                 self._add("MISSING_RECIPE", "task", step.id)
                 continue
             recipe = recipes[step.recipe_id]
+            if not (recipe.furnace_program_key or "").strip():
+                self._add("AMBIGUOUS_FURNACE_PROGRAM", "task", step.id)
             effective = date.fromisoformat(recipe.effective_date)
             expiry = (
                 date.fromisoformat(recipe.expiry_date) if recipe.expiry_date else None
@@ -195,6 +201,24 @@ class PlanningInstanceValidator:
                 (resource.load_unit or "").strip() for resource in candidates
             ):
                 self._add("INVALID_BATCH_OR_LOAD_UNIT", "task", step.id)
+            requirements = {item.resource_id: item for item in step.load_requirements}
+            exact = [
+                (resource, requirements.get(resource.id))
+                for resource in candidates
+                if requirements.get(resource.id) is not None
+                and requirements[resource.id].quantity is not None
+                and requirements[resource.id].quantity > 0
+                and requirements[resource.id].load_unit == resource.load_unit
+            ]
+            if candidates and not exact:
+                self._add("INEXACT_LOAD_CONVERSION", "task", step.id)
+            elif exact and not any(
+                resource.capacity is not None
+                and resource.capacity == resource.capacity.to_integral_value()
+                and requirement.quantity <= int(resource.capacity)
+                for resource, requirement in exact
+            ):
+                self._add("BATCH_EXCEEDS_ALL_FURNACES", "task", step.id)
 
     def _validate_compatibility(self):
         rules = defaultdict(set)
@@ -274,6 +298,61 @@ class PlanningInstanceValidator:
                 for interval in unavailable
             ):
                 self._add("FROZEN_DOWNTIME_CONFLICT", "task", step.id)
+
+    def _validate_frozen_furnace_loads(self):
+        steps = {item.id: item for item in self.instance.steps}
+        equipment = {item.id: item for item in self.instance.equipment}
+        recipes = {item.id: item for item in self.instance.recipes}
+        seen_members = set()
+        for load in self.instance.frozen_furnace_loads:
+            invalid = False
+            resource = equipment.get(load.resource_id)
+            recipe = recipes.get(load.recipe_id)
+            members = [steps.get(item) for item in load.member_task_ids]
+            if (
+                resource is None
+                or recipe is None
+                or recipe.furnace_program_key != load.furnace_program_key
+                or recipe.stage != load.stage
+                or resource.capacity is None
+                or resource.capacity != resource.capacity.to_integral_value()
+                or int(resource.capacity) != load.capacity
+                or resource.load_unit != load.load_unit
+                or load.end_minute <= load.start_minute
+                or not members
+                or any(item is None for item in members)
+            ):
+                invalid = True
+            total = 0
+            for step in (item for item in members if item is not None):
+                requirement = next(
+                    (
+                        item
+                        for item in step.load_requirements
+                        if item.resource_id == load.resource_id
+                    ),
+                    None,
+                )
+                if (
+                    step.id in seen_members
+                    or step.stage != load.stage
+                    or step.recipe_id != load.recipe_id
+                    or step.assigned_resource_id != load.resource_id
+                    or step.original_start_minute != load.start_minute
+                    or step.original_end_minute != load.end_minute
+                    or not (step.frozen or step.started)
+                    or requirement is None
+                    or requirement.quantity is None
+                    or requirement.load_unit != load.load_unit
+                ):
+                    invalid = True
+                else:
+                    total += requirement.quantity
+                seen_members.add(step.id)
+            if total != load.loaded_quantity or total > load.capacity:
+                invalid = True
+            if invalid:
+                self._add("FROZEN_LOAD_MISMATCH", "furnace_load", load.id)
 
     def _validate_materials(self):
         materials = {item.id: item for item in self.instance.materials}

@@ -33,6 +33,10 @@
 | `MLCC-P014` | BLOCKER | 订单、批次或工序数量不守恒 | `Demand.quantity`、`OperationPlan.quantity` |
 | `MLCC-P015` | BLOCKER | 最大等待时间小于依赖关系要求的必要间隔 | `operation.mlcc_max_wait_time`、`operation_dependency.hard_safety_leadtime` |
 | `MLCC-P016` | WARNING | 交期或原计划时间超出排产周期 | 订单交期、任务原计划时间 |
+| `MLCC-P017` | BLOCKER | 单批装载量超过全部候选炉有效容量 | `mlcc_load_quantity`、设备有效容量 |
+| `MLCC-P018` | BLOCKER | 炉工序配方不唯一或缺少明确炉程键 | 配方版本、`furnace_program_key` |
+| `MLCC-P019` | BLOCKER | 冻结炉次成员、容量、设备、时间或配方不一致 | 炉次及炉次成员表 |
+| `MLCC-P020` | BLOCKER | 装载单位缺失、无法换算或不能精确转为整数 | 装载单位及显式换算表 |
 
 ## 确定性与去重
 
@@ -41,7 +45,7 @@
 ## 演示数据
 
 - `valid_demo`：默认 100 批，可配置为 100～500 批，预检无 BLOCKER。
-- `invalid_demo`：故意包含 `MLCC-P001`～`MLCC-P016` 的触发数据；不用于生产基础数据。
+- `invalid_demo`：故意包含 `MLCC-P001`～`MLCC-P020` 的触发数据；不用于生产基础数据。
 
 ```bash
 python frepplectl.py load_mlcc_solver_demo --dataset valid_demo --batches 100

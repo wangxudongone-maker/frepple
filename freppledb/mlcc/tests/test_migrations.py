@@ -21,6 +21,7 @@ class MlccMigrationTest(TestCase):
             "mlcc_schedule_result",
             "mlcc_precheck_run",
             "mlcc_precheck_issue",
+            "mlcc_load_unit_conversion",
         }
         self.assertTrue(expected_tables.issubset(tables))
 
@@ -49,6 +50,8 @@ class MlccMigrationTest(TestCase):
                 "mlcc_lot_number",
                 "mlcc_recipe_version",
                 "mlcc_schedulable",
+                "mlcc_load_quantity",
+                "mlcc_load_unit",
             },
         }
         with connection.cursor() as cursor:
@@ -66,7 +69,7 @@ class MlccUpgradeMigrationTest(TransactionTestCase):
     """Exercise the phase-1 PostgreSQL schema upgrade and idempotent re-migrate."""
 
     migrate_from = ("mlcc", "0002_core_attributes")
-    migrate_to = ("mlcc", "0004_precheck_models")
+    migrate_to = ("mlcc", "0006_furnace_load_attributes")
 
     def tearDown(self):
         MigrationExecutor(connection).migrate([self.migrate_to])
@@ -95,7 +98,12 @@ class MlccUpgradeMigrationTest(TransactionTestCase):
                 for node, backwards in plan
                 if node.app_label == "mlcc" and not backwards
             ],
-            ["0003_solver_attributes", "0004_precheck_models"],
+            [
+                "0003_solver_attributes",
+                "0004_precheck_models",
+                "0005_furnace_batching",
+                "0006_furnace_load_attributes",
+            ],
         )
         executor.migrate([self.migrate_to])
         new_apps = executor.loader.project_state([self.migrate_to]).apps

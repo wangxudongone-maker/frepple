@@ -24,6 +24,9 @@ from freppledb.input.models import (
 from freppledb.mlcc.models import (
     MlccCompatibilityRule,
     MlccEquipmentCapability,
+    MlccFurnaceLoad,
+    MlccFurnaceLoadItem,
+    MlccLoadUnitConversion,
     MlccQualityHold,
     MlccRecipe,
     MlccSetupMatrix,
@@ -53,6 +56,10 @@ class SolverDemoLoader:
     def _delete_source(self, source):
         # Delete only the named demo namespace, in foreign-key order.
         MlccQualityHold.objects.using(self.database).filter(source=source).delete()
+        MlccFurnaceLoadItem.objects.using(self.database).filter(
+            furnace_load__source=source
+        ).delete()
+        MlccFurnaceLoad.objects.using(self.database).filter(source=source).delete()
         OperationPlanResource.objects.using(self.database).filter(
             operationplan__source=source
         ).delete()
@@ -66,6 +73,9 @@ class SolverDemoLoader:
             source=source
         ).delete()
         MlccEquipmentCapability.objects.using(self.database).filter(
+            source=source
+        ).delete()
+        MlccLoadUnitConversion.objects.using(self.database).filter(
             source=source
         ).delete()
         MlccRecipe.objects.using(self.database).filter(source=source).delete()
@@ -167,6 +177,12 @@ class SolverDemoLoader:
                     item=item,
                     operation=operation,
                     active=True,
+                    furnace_program_key=(
+                        f"{stage.upper()}-PROGRAM-V1" if furnace else None
+                    ),
+                    compatibility_group=(
+                        f"{stage.upper()}-CERTIFIED-X7R" if furnace else None
+                    ),
                     parameters={"setup_family": f"{stage}-family-a", "demo": True},
                     source=source,
                 )
@@ -207,6 +223,8 @@ class SolverDemoLoader:
                 item=item,
                 operation=operations["sintering"],
                 active=True,
+                furnace_program_key="SINTERING-PROGRAM-V2",
+                compatibility_group="SINTERING-CERTIFIED-X7R-V2",
                 parameters={"setup_family": "sintering-family-b", "demo": True},
                 source=source,
             )
@@ -229,6 +247,17 @@ class SolverDemoLoader:
                 enabled=True,
                 source=source,
             )
+            for stage in ("debinding", "sintering"):
+                MlccCompatibilityRule.objects.using(self.database).create(
+                    name=f"MLCC-P2-VALID-X7R-X7R-{stage.upper()}",
+                    process_stage=stage,
+                    family_a="X7R",
+                    family_b="X7R",
+                    rule_type="allow",
+                    reason="同一认证产品族允许同炉",
+                    enabled=True,
+                    source=source,
+                )
 
             demands = []
             orders = []
@@ -268,6 +297,14 @@ class SolverDemoLoader:
                             mlcc_lot_number=lot,
                             mlcc_recipe_version="V1",
                             mlcc_schedulable=True,
+                            mlcc_load_quantity=(
+                                Decimal("1")
+                                if stage in ("debinding", "sintering")
+                                else None
+                            ),
+                            mlcc_load_unit=(
+                                "tray" if stage in ("debinding", "sintering") else None
+                            ),
                         )
                     )
                     cursor = end + timedelta(minutes=15)
@@ -427,6 +464,7 @@ class SolverDemoLoader:
                 item=item,
                 operation=operations["sintering"],
                 active=True,
+                furnace_program_key="",
                 parameters={"setup_family": "invalid-family"},
                 source=source,
             )
@@ -521,6 +559,16 @@ class SolverDemoLoader:
                             "EXPIRED" if stage == "sintering" else "MISSING"
                         ),
                         mlcc_schedulable=True,
+                        mlcc_load_quantity=(
+                            Decimal("2000")
+                            if stage == "sintering"
+                            else quantity if stage == "debinding" else None
+                        ),
+                        mlcc_load_unit=(
+                            "tray"
+                            if stage == "sintering"
+                            else "piece" if stage == "debinding" else None
+                        ),
                     )
                 )
             OperationPlan.objects.using(self.database).bulk_create(order_rows)
@@ -530,6 +578,30 @@ class SolverDemoLoader:
                 resource=sintering_resource,
                 quantity=Decimal("1"),
                 status="confirmed",
+                source=source,
+            )
+            frozen_load = MlccFurnaceLoad.objects.using(self.database).create(
+                reference="MLCC-P2-INVALID-FROZEN-LOAD",
+                resource=sintering_resource,
+                recipe=expired_recipe,
+                operation_type="sintering",
+                furnace_program_key="WRONG-PROGRAM",
+                planned_start=sintering_order.startdate,
+                planned_end=sintering_order.enddate,
+                status="ready",
+                capacity=Decimal("999"),
+                loaded_quantity=Decimal("1"),
+                load_unit="tray",
+                frozen=True,
+                source=source,
+            )
+            MlccFurnaceLoadItem.objects.using(self.database).create(
+                furnace_load=frozen_load,
+                manufacturing_order_id=sintering_order.reference,
+                batch_code=lot,
+                quantity=Decimal("1"),
+                load_unit="tray",
+                conversion_trace={"demo": "intentional mismatch"},
                 source=source,
             )
             # bulk_create intentionally preserves the inconsistent schedulable flag.

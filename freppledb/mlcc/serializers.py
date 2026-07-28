@@ -15,6 +15,7 @@ from .models import (
     MlccEquipmentCapability,
     MlccFurnaceLoad,
     MlccFurnaceLoadItem,
+    MlccLoadUnitConversion,
     MlccQualityHold,
     MlccRecipe,
     MlccScheduleResult,
@@ -60,6 +61,27 @@ class MlccRecipeFilter(filters.FilterSet):
 class MlccRecipeSerializer(MlccModelSerializer):
     class Meta:
         model = MlccRecipe
+        fields = "__all__"
+        read_only_fields = ("lastmodified",)
+        list_serializer_class = BulkListSerializer
+        update_lookup_field = "id"
+        partial = True
+
+
+class MlccLoadUnitConversionFilter(filters.FilterSet):
+    class Meta:
+        model = MlccLoadUnitConversion
+        fields = {
+            "item": ["exact", "in"],
+            "from_unit": ["exact", "in"],
+            "to_unit": ["exact", "in"],
+            "enabled": ["exact"],
+        }
+
+
+class MlccLoadUnitConversionSerializer(MlccModelSerializer):
+    class Meta:
+        model = MlccLoadUnitConversion
         fields = "__all__"
         read_only_fields = ("lastmodified",)
         list_serializer_class = BulkListSerializer
@@ -285,6 +307,11 @@ def _api_classes(model, serializer, filter_class):
 
 MlccRecipeAPI, MlccRecipeDetailAPI = _api_classes(
     MlccRecipe, MlccRecipeSerializer, MlccRecipeFilter
+)
+MlccLoadUnitConversionAPI, MlccLoadUnitConversionDetailAPI = _api_classes(
+    MlccLoadUnitConversion,
+    MlccLoadUnitConversionSerializer,
+    MlccLoadUnitConversionFilter,
 )
 MlccEquipmentCapabilityAPI, MlccEquipmentCapabilityDetailAPI = _api_classes(
     MlccEquipmentCapability,

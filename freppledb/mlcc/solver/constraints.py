@@ -2,8 +2,14 @@
 
 from collections import defaultdict
 
-
 FURNACE_STAGES = ("debinding", "sintering")
+
+
+def load_requirement(step, resource_id):
+    return next(
+        (item for item in step.load_requirements if item.resource_id == resource_id),
+        None,
+    )
 
 
 def schedulable_steps(instance):
@@ -105,7 +111,16 @@ def eligible_resources(instance, step, indexed_capabilities=None):
         if not valid:
             continue
         if step.stage in FURNACE_STAGES:
-            if resource.capacity is None or step.quantity > resource.capacity:
+            requirement = load_requirement(step, resource_id)
+            if (
+                requirement is None
+                or requirement.quantity is None
+                or requirement.quantity <= 0
+                or resource.capacity is None
+                or resource.capacity != resource.capacity.to_integral_value()
+                or requirement.quantity > int(resource.capacity)
+                or requirement.load_unit != resource.load_unit
+            ):
                 continue
             if not (resource.load_unit or "").strip():
                 continue

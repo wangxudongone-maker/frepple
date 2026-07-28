@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass, field
+from decimal import Decimal
 from typing import Any
 
 from .serializer import to_primitive
@@ -18,7 +19,7 @@ class SolverParameters:
     num_search_workers: int = 1
     random_seed: int = 0
     log_search_progress: bool = False
-    furnace_mode: str = "one_batch_per_run"
+    furnace_mode: str = "multi_batch_loads"
 
 
 @dataclass(frozen=True)
@@ -30,6 +31,7 @@ class TaskAssignment:
     start_minute: int
     end_minute: int
     frozen: bool
+    furnace_load_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -53,6 +55,29 @@ class ObjectiveStage:
 
 
 @dataclass(frozen=True)
+class FurnaceLoadAssignment:
+    load_id: str
+    operation_type: str
+    equipment_id: str
+    recipe_id: str
+    recipe_version: str
+    furnace_program_key: str
+    start_minute: int
+    end_minute: int
+    capacity: int
+    loaded_quantity: int
+    load_unit: str
+    utilization: Decimal
+    member_batch_ids: tuple[str, ...]
+    member_task_ids: tuple[str, ...]
+    compatibility_evidence: dict[str, tuple[str, ...]]
+    conversion_evidence: dict[str, dict[str, Any]]
+    frozen: bool
+    status: str = "proposed"
+    constraint_summary: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class SchedulingSolution:
     status: str
     input_fingerprint: str
@@ -60,12 +85,16 @@ class SchedulingSolution:
     solver_version: str
     parameters: SolverParameters
     assignments: tuple[TaskAssignment, ...] = ()
+    furnace_loads: tuple[FurnaceLoadAssignment, ...] = ()
     orders: tuple[OrderSchedule, ...] = ()
     objective_stages: tuple[ObjectiveStage, ...] = ()
     objective_values: dict[str, int] = field(default_factory=dict)
     wall_time_seconds: float = 0.0
     optimality_gap: float | None = None
     message: str = ""
+    phase3a_baseline_metrics: dict[str, Any] = field(default_factory=dict)
+    phase3b_metrics: dict[str, Any] = field(default_factory=dict)
+    metric_deltas: dict[str, Any] = field(default_factory=dict)
     schema_version: str = SOLUTION_SCHEMA_VERSION
 
     @property

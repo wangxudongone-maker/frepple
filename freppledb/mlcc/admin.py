@@ -10,6 +10,7 @@ from .models import (
     MlccEquipmentCapability,
     MlccFurnaceLoad,
     MlccFurnaceLoadItem,
+    MlccLoadUnitConversion,
     MlccQualityHold,
     MlccPrecheckIssue,
     MlccPrecheckRun,
@@ -80,7 +81,23 @@ class MlccRecipeAdmin(MlccModelAdmin):
         "item",
         "operation",
         "active",
+        "furnace_program_key",
+        "compatibility_group",
         "parameters",
+        "source",
+    )
+
+
+@admin.register(MlccLoadUnitConversion, site=data_site)
+class MlccLoadUnitConversionAdmin(MlccModelAdmin):
+    raw_id_fields = ("item",)
+    fields = (
+        "item",
+        "from_unit",
+        "to_unit",
+        "numerator",
+        "denominator",
+        "enabled",
         "source",
     )
 
@@ -136,15 +153,22 @@ class MlccBatchGenealogyAdmin(MlccModelAdmin):
 
 @admin.register(MlccFurnaceLoad, site=data_site)
 class MlccFurnaceLoadAdmin(MlccModelAdmin):
-    raw_id_fields = ("resource", "recipe")
+    raw_id_fields = ("run", "resource", "recipe")
     fields = (
         "reference",
+        "run",
         "resource",
         "recipe",
+        "operation_type",
+        "furnace_program_key",
         "planned_start",
         "planned_end",
         "status",
         "capacity",
+        "loaded_quantity",
+        "load_unit",
+        "frozen",
+        "details",
         "source",
     )
 
@@ -157,6 +181,8 @@ class MlccFurnaceLoadItemAdmin(MlccModelAdmin):
         "manufacturing_order",
         "batch_code",
         "quantity",
+        "load_unit",
+        "conversion_trace",
         "sequence",
         "source",
     )

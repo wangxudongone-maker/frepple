@@ -70,6 +70,8 @@ class ProcessStep:
     frozen: bool = False
     original_start_minute: int | None = None
     original_end_minute: int | None = None
+    recipe_resolution: str = "resolved"
+    load_requirements: tuple["FurnaceLoadRequirement", ...] = ()
 
 
 @dataclass(frozen=True)
@@ -113,6 +115,36 @@ class Recipe:
     active: bool
     setup_family: str | None
     parameters: dict[str, Any] = field(default_factory=dict)
+    furnace_program_key: str | None = None
+    compatibility_group: str | None = None
+
+
+@dataclass(frozen=True)
+class FurnaceLoadRequirement:
+    resource_id: str
+    quantity: int | None
+    load_unit: str | None
+    source_quantity: Decimal
+    source_unit: str | None
+    conversion_id: str | None = None
+    conversion_numerator: int | None = None
+    conversion_denominator: int | None = None
+
+
+@dataclass(frozen=True)
+class FrozenFurnaceLoad:
+    id: str
+    stage: str
+    resource_id: str
+    recipe_id: str
+    furnace_program_key: str
+    start_minute: int
+    end_minute: int
+    capacity: int
+    loaded_quantity: int
+    load_unit: str
+    member_task_ids: tuple[str, ...]
+    status: str
 
 
 @dataclass(frozen=True)
@@ -157,6 +189,7 @@ class PlanningInstance:
     compatibility_rules: tuple[CompatibilityRule, ...] = ()
     setup_rules: tuple[SetupRule, ...] = ()
     materials: tuple[MaterialAvailability, ...] = ()
+    frozen_furnace_loads: tuple[FrozenFurnaceLoad, ...] = ()
     schema_version: str = SCHEMA_VERSION
 
     @property

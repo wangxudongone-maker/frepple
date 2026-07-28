@@ -20,6 +20,7 @@ from .models import (
     MlccEquipmentCapability,
     MlccFurnaceLoad,
     MlccFurnaceLoadItem,
+    MlccLoadUnitConversion,
     MlccQualityHold,
     MlccPrecheckIssue,
     MlccPrecheckRun,
@@ -77,7 +78,25 @@ class MlccRecipeList(GridReport):
             extra='"role":"input/operation"',
         ),
         GridFieldBool("active", title=_("active")),
+        GridFieldText("furnace_program_key", title=_("furnace program key")),
+        GridFieldText("compatibility_group", title=_("certified compatibility group")),
         GridFieldJSON("parameters", title=_("parameters")),
+    ) + common_tail
+
+
+class MlccLoadUnitConversionList(GridReport):
+    title = _("MLCC load unit conversions")
+    model = MlccLoadUnitConversion
+    basequeryset = MlccLoadUnitConversion.objects.all()
+    frozenColumns = 1
+    rows = (
+        detail_id("mlccloadunitconversion"),
+        GridFieldText("item", title=_("item"), field_name="item__name"),
+        GridFieldText("from_unit", title=_("from unit")),
+        GridFieldText("to_unit", title=_("to unit")),
+        GridFieldInteger("numerator", title=_("numerator")),
+        GridFieldInteger("denominator", title=_("denominator")),
+        GridFieldBool("enabled", title=_("enabled")),
     ) + common_tail
 
 
@@ -172,12 +191,21 @@ class MlccFurnaceLoadList(GridReport):
     rows = (
         detail_id("mlccfurnaceload"),
         GridFieldText("reference", title=_("reference")),
+        GridFieldText("run", title=_("schedule run"), field_name="run__name"),
         GridFieldText("resource", title=_("resource"), field_name="resource__name"),
         GridFieldText("recipe", title=_("recipe"), field_name="recipe__name"),
+        GridFieldChoice(
+            "operation_type", title=_("operation type"), choices=PROCESS_STAGES
+        ),
+        GridFieldText("furnace_program_key", title=_("furnace program key")),
         GridFieldDateTime("planned_start", title=_("planned start")),
         GridFieldDateTime("planned_end", title=_("planned end")),
         GridFieldChoice("status", title=_("status"), choices=MlccFurnaceLoad.STATUSES),
         GridFieldNumber("capacity", title=_("capacity")),
+        GridFieldNumber("loaded_quantity", title=_("loaded quantity")),
+        GridFieldText("load_unit", title=_("load unit")),
+        GridFieldBool("frozen", title=_("frozen")),
+        GridFieldJSON("details", title=_("details")),
     ) + common_tail
 
 
@@ -200,6 +228,8 @@ class MlccFurnaceLoadItemList(GridReport):
         ),
         GridFieldText("batch_code", title=_("batch code")),
         GridFieldNumber("quantity", title=_("quantity")),
+        GridFieldText("load_unit", title=_("load unit")),
+        GridFieldJSON("conversion_trace", title=_("conversion trace")),
         GridFieldInteger("sequence", title=_("sequence")),
     ) + common_tail
 

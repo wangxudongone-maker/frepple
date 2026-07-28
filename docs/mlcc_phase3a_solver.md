@@ -10,13 +10,13 @@
 
 | 文件 | 职责 |
 | --- | --- |
-| `solver/cpsat.py` | CP-SAT 建模、三阶段分层求解和状态处理 |
+| `solver/phase3a.py` | 第三阶段 A CP-SAT 建模、三阶段分层求解和状态处理 |
 | `solver/constraints.py` | 设备资格、班次和停机区间等共享纯函数 |
 | `solver/solution.py` | `mlcc-schedule-solution/v1` 输出结构和稳定 JSON |
 | `solver/solution_validator.py` | 不调用求解器的独立硬约束校验 |
 | `solver/solve_service.py` | 将已校验解写入独立 MLCC 预览表 |
 
-`cpsat.py`、`constraints.py`、`solution.py` 和 `solution_validator.py`
+`phase3a.py`、`constraints.py`、`solution.py` 和 `solution_validator.py`
 不导入 Django，也不接收 ORM 对象。
 
 ## 硬约束
@@ -100,3 +100,6 @@ python frepplectl.py mlcc_solve \
 - 未把换型矩阵作为序列相关准备时间加入 CP-SAT；
 - 未做跨工厂、替代工艺路线、拆批或合批；
 - 只生成预览，不执行生产计划确认或下发。
+
+第三阶段 B 已将本实现保留为安全上界和超时回退，详见
+`docs/mlcc_phase3b_furnace_batching.md`。

@@ -117,6 +117,14 @@ class ValidSolverDemoIntegrationTest(TestCase):
         self.assertIn(solution.status, ("FEASIBLE", "OPTIMAL"), solution.message)
         self.assertEqual(solution.scheduled_task_count, 500)
         self.assertEqual(validation.violation_count, 0, validation.violations)
+        self.assertLess(
+            solution.phase3b_metrics["furnace_load_count"],
+            solution.phase3a_baseline_metrics["furnace_load_count"],
+        )
+        self.assertLessEqual(
+            solution.phase3b_metrics["weighted_tardiness"],
+            solution.phase3a_baseline_metrics["weighted_tardiness"],
+        )
         self.assertLess(elapsed, 60)
 
     def test_500_batch_cpsat_acceptance(self):
@@ -135,6 +143,14 @@ class ValidSolverDemoIntegrationTest(TestCase):
         self.assertIn(solution.status, ("FEASIBLE", "OPTIMAL"), solution.message)
         self.assertEqual(solution.scheduled_task_count, 2500)
         self.assertEqual(validation.violation_count, 0, validation.violations)
+        self.assertLess(
+            solution.phase3b_metrics["furnace_load_count"],
+            solution.phase3a_baseline_metrics["furnace_load_count"],
+        )
+        self.assertLessEqual(
+            solution.phase3b_metrics["weighted_tardiness"],
+            solution.phase3a_baseline_metrics["weighted_tardiness"],
+        )
         self.assertLess(elapsed, 300)
 
 
@@ -151,7 +167,7 @@ class InvalidSolverDemoIntegrationTest(TestCase):
             source=INVALID_SOURCE,
         )
         actual = {item.code for item in report.issues}
-        expected = {f"MLCC-P{number:03d}" for number in range(1, 17)}
+        expected = {f"MLCC-P{number:03d}" for number in range(1, 21)}
         self.assertEqual(actual, expected)
         self.assertGreater(report.blocker_count, 0)
         self.assertFalse(report.can_start_solver)

@@ -73,10 +73,17 @@ class CpSatPureSolverTest(SimpleTestCase):
         solution = solve(instance, self.parameters)
         self.assertIn(solution.status, ("FEASIBLE", "OPTIMAL"))
         self.assertEqual(solution.scheduled_task_count, 5)
-        self.assertEqual(solution.input_fingerprint, planning_instance_fingerprint(instance))
+        self.assertEqual(
+            solution.input_fingerprint, planning_instance_fingerprint(instance)
+        )
         self.assertEqual(
             [item.name for item in solution.objective_stages],
-            ["feasibility", "weighted_tardiness", "makespan"],
+            [
+                "feasibility",
+                "weighted_tardiness",
+                "furnace_load_count",
+                "makespan",
+            ],
         )
         assignments = {item.task_id: item for item in solution.assignments}
         self.assertEqual(assignments["task:1"].start_minute, 0)
@@ -127,21 +134,20 @@ class CpSatPureSolverTest(SimpleTestCase):
         self.assertEqual(assignment.end_minute, frozen.original_end_minute)
         self.assertTrue(self.validator.validate(instance, solution).valid)
 
-    def test_two_furnace_batches_never_overlap(self):
+    def test_two_compatible_furnace_batches_share_explicit_load(self):
         instance = two_batch_instance()
         solution = solve(instance, self.parameters)
         self.assertIn(solution.status, ("FEASIBLE", "OPTIMAL"))
-        furnace = sorted(
-            (
-                item.start_minute,
-                item.end_minute,
-            )
-            for item in solution.assignments
-            if item.stage == "sintering"
-        )
+        furnace = [item for item in solution.assignments if item.stage == "sintering"]
         self.assertEqual(len(furnace), 2)
-        self.assertLessEqual(furnace[0][1], furnace[1][0])
-        self.assertEqual(solution.parameters.furnace_mode, "one_batch_per_run")
+        self.assertEqual(furnace[0].furnace_load_id, furnace[1].furnace_load_id)
+        self.assertEqual(furnace[0].start_minute, furnace[1].start_minute)
+        self.assertEqual(furnace[0].end_minute, furnace[1].end_minute)
+        self.assertEqual(solution.parameters.furnace_mode, "multi_batch_loads")
+        self.assertLess(
+            solution.phase3b_metrics["furnace_load_count"],
+            solution.phase3a_baseline_metrics["furnace_load_count"],
+        )
         self.assertTrue(self.validator.validate(instance, solution).valid)
 
     def test_blockers_refuse_solver_even_after_json_round_trip(self):
@@ -185,7 +191,9 @@ class CpSatPureSolverTest(SimpleTestCase):
         self.assertEqual(first.input_fingerprint, second.input_fingerprint)
         self.assertEqual(first.solver_version, second.solver_version)
         self.assertEqual(first.parameters, second.parameters)
-        self.assertIn('"furnace_mode":"one_batch_per_run"', scheduling_solution_json(first))
+        self.assertIn(
+            '"furnace_mode":"multi_batch_loads"', scheduling_solution_json(first)
+        )
 
     def test_pure_solver_has_no_django_or_orm_dependency(self):
         source = inspect.getsource(cpsat)
@@ -197,6 +205,9 @@ class CpSatPureSolverTest(SimpleTestCase):
             elif isinstance(node, ast.ImportFrom):
                 imported_modules.append(node.module or "")
         self.assertFalse(
-            any(name == "django" or name.startswith("django.") for name in imported_modules)
+            any(
+                name == "django" or name.startswith("django.")
+                for name in imported_modules
+            )
         )
         self.assertNotIn("objects.", source)

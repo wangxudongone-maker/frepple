@@ -25,6 +25,8 @@ from freppledb.input.models import (
 from freppledb.mlcc.models import (
     MlccCompatibilityRule,
     MlccEquipmentCapability,
+    MlccFurnaceLoad,
+    MlccLoadUnitConversion,
     MlccQualityHold,
     MlccRecipe,
     MlccSetupMatrix,
@@ -37,6 +39,8 @@ from .schema import (
     CustomerOrder,
     Equipment,
     EquipmentCapability,
+    FrozenFurnaceLoad,
+    FurnaceLoadRequirement,
     MaterialAvailability,
     PlanningInstance,
     PlanningWindow,
@@ -168,6 +172,7 @@ class PlanningInstanceExtractor:
         equipment = self._extract_equipment(
             steps, resources_by_operation, assigned_resources
         )
+        frozen_furnace_loads = self._extract_frozen_furnace_loads(steps)
 
         window = PlanningWindow(
             origin=self.origin.isoformat(),
@@ -186,6 +191,7 @@ class PlanningInstanceExtractor:
             compatibility_rules=self._extract_compatibility_rules(),
             setup_rules=self._extract_setup_rules(),
             materials=tuple(sorted(materials, key=lambda item: item.id)),
+            frozen_furnace_loads=frozen_furnace_loads,
         )
 
     @staticmethod
@@ -238,6 +244,8 @@ class PlanningInstanceExtractor:
                     active=recipe.active,
                     setup_family=parameters.get("setup_family"),
                     parameters=parameters,
+                    furnace_program_key=recipe.furnace_program_key,
+                    compatibility_group=recipe.compatibility_group,
                 )
             )
             objects[recipe.pk] = (recipe, identifier)
@@ -256,15 +264,36 @@ class PlanningInstanceExtractor:
                 and value[0].operation_id in (None, order.operation_id)
                 and value[0].item_id in (None, item_id)
             ]
+            candidates = [
+                value
+                for value in candidates
+                if not version or value[0].version == version
+            ]
             candidates.sort(
                 key=lambda value: (
-                    value[0].version != version if version else False,
                     not value[0].active,
                     -value[0].effective_date.toordinal(),
                     value[1],
                 )
             )
-            result[order.reference] = candidates[0] if candidates else None
+            active = [
+                value
+                for value in candidates
+                if value[0].active
+                and value[0].effective_date <= self.origin.date()
+                and (
+                    value[0].expiry_date is None
+                    or value[0].expiry_date >= self.origin.date()
+                )
+            ]
+            if len(active) == 1:
+                result[order.reference] = (*active[0], "resolved")
+            elif len(active) > 1:
+                result[order.reference] = (None, None, "ambiguous")
+            elif candidates:
+                result[order.reference] = (*candidates[0], "resolved")
+            else:
+                result[order.reference] = (None, None, "missing")
         return result
 
     def _resource_candidates(self, orders):
@@ -349,6 +378,20 @@ class PlanningInstanceExtractor:
         assigned_resources,
         capabilities,
     ):
+        candidate_resource_names = sorted(
+            {name for values in resources_by_operation.values() for name in values}
+        )
+        resource_load_data = {
+            row.name: ((getattr(row, "mlcc_load_unit", None) or "").strip() or None,)
+            for row in Resource.objects.using(self.database)
+            .filter(name__in=candidate_resource_names)
+            .order_by("name")
+        }
+        conversions = list(
+            self._source_filter(
+                MlccLoadUnitConversion.objects.using(self.database).filter(enabled=True)
+            ).order_by("item_id", "from_unit", "to_unit", "id")
+        )
         dependencies = defaultdict(list)
         operation_ids = {
             order.operation_id for group in groups.values() for order in group
@@ -378,6 +421,7 @@ class PlanningInstanceExtractor:
                 recipe_value = task_recipes.get(order.reference)
                 recipe_object = recipe_value[0] if recipe_value else None
                 recipe_id = recipe_value[1] if recipe_value else None
+                recipe_resolution = recipe_value[2] if recipe_value else "missing"
                 candidate_names = resources_by_operation.get(order.operation_id, ())
                 certified = []
                 for resource_name in candidate_names:
@@ -465,10 +509,100 @@ class PlanningInstanceExtractor:
                         frozen=frozen,
                         original_start_minute=start_minute,
                         original_end_minute=self._minute(order.enddate),
+                        recipe_resolution=recipe_resolution,
+                        load_requirements=self._load_requirements(
+                            order,
+                            stage,
+                            candidate_names,
+                            resource_load_data,
+                            conversions,
+                        ),
                     )
                 )
                 previous_id = task_id
         return steps
+
+    @staticmethod
+    def _exact_integer(value):
+        value = Decimal(value)
+        return int(value) if value == value.to_integral_value() else None
+
+    def _load_requirements(
+        self,
+        order,
+        stage,
+        candidate_names,
+        resource_load_data,
+        conversions,
+    ):
+        if stage not in ("debinding", "sintering"):
+            return ()
+        source_quantity = (
+            getattr(order, "mlcc_load_quantity", None)
+            if getattr(order, "mlcc_load_quantity", None) is not None
+            else order.quantity
+        )
+        source_unit = (getattr(order, "mlcc_load_unit", None) or "").strip() or None
+        item_id = order.operation.item_id
+        requirements = []
+        for resource_name in sorted(candidate_names):
+            target_unit = resource_load_data.get(resource_name, (None,))[0]
+            converted = None
+            conversion = None
+            if source_unit and target_unit and source_unit == target_unit:
+                converted = self._exact_integer(source_quantity)
+            elif source_unit and target_unit:
+                candidates = [
+                    row
+                    for row in conversions
+                    if row.from_unit == source_unit
+                    and row.to_unit == target_unit
+                    and row.item_id in (None, item_id)
+                ]
+                candidates.sort(
+                    key=lambda row: (
+                        row.item_id != item_id,
+                        row.id,
+                    )
+                )
+                if candidates:
+                    conversion = candidates[0]
+                    converted = self._exact_integer(
+                        Decimal(source_quantity)
+                        * Decimal(conversion.numerator)
+                        / Decimal(conversion.denominator)
+                    )
+            requirements.append(
+                FurnaceLoadRequirement(
+                    resource_id=stable_id("resource", resource_name),
+                    quantity=converted,
+                    load_unit=target_unit,
+                    source_quantity=Decimal(source_quantity),
+                    source_unit=source_unit,
+                    conversion_id=(
+                        stable_id("load_conversion", conversion.id)
+                        if conversion
+                        else (
+                            "identity"
+                            if source_unit
+                            and target_unit
+                            and source_unit == target_unit
+                            else None
+                        )
+                    ),
+                    conversion_numerator=(
+                        conversion.numerator
+                        if conversion
+                        else (1 if converted is not None else None)
+                    ),
+                    conversion_denominator=(
+                        conversion.denominator
+                        if conversion
+                        else (1 if converted is not None else None)
+                    ),
+                )
+            )
+        return tuple(requirements)
 
     def _extract_orders_and_batches(self, groups):
         batch_keys = sorted(groups)
@@ -654,6 +788,52 @@ class PlanningInstanceExtractor:
             )
             for resource in resources
         ]
+
+    def _extract_frozen_furnace_loads(self, steps):
+        task_ids = {item.id for item in steps}
+        queryset = (
+            MlccFurnaceLoad.objects.using(self.database)
+            .filter(Q(frozen=True) | Q(status__in=("ready", "running", "complete")))
+            .exclude(status__in=("draft", "proposed", "cancelled"))
+            .select_related("resource", "recipe")
+            .prefetch_related("items")
+            .order_by("reference")
+        )
+        queryset = self._source_filter(queryset)
+        result = []
+        for load in queryset:
+            if not load.recipe_id or not load.planned_start or not load.planned_end:
+                continue
+            member_task_ids = tuple(
+                sorted(
+                    stable_id("task", row.manufacturing_order_id)
+                    for row in load.items.all()
+                    if stable_id("task", row.manufacturing_order_id) in task_ids
+                )
+            )
+            capacity = self._exact_integer(load.capacity)
+            loaded_quantity = self._exact_integer(load.loaded_quantity)
+            result.append(
+                FrozenFurnaceLoad(
+                    id=stable_id("furnace_load", load.reference),
+                    stage=load.operation_type,
+                    resource_id=stable_id("resource", load.resource_id),
+                    recipe_id=stable_id(
+                        "recipe", f"{load.recipe.name}:{load.recipe.version}"
+                    ),
+                    furnace_program_key=load.furnace_program_key or "",
+                    start_minute=self._minute(load.planned_start),
+                    end_minute=self._minute(load.planned_end),
+                    capacity=-1 if capacity is None else capacity,
+                    loaded_quantity=(
+                        -1 if loaded_quantity is None else loaded_quantity
+                    ),
+                    load_unit=load.load_unit,
+                    member_task_ids=member_task_ids,
+                    status=load.status,
+                )
+            )
+        return tuple(result)
 
     def _calendar_intervals(self, resource):
         horizon = self.horizon_days * 24 * 60

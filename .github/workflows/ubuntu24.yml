@@ -27,8 +27,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - label: phase1-baseline
-            ref: f7f538cef7eaa404480e1f385feb9f89067c44d6
+          - label: phase3a-baseline
+            ref: 062b0559c9f3470d3f8a2bdba1ad90c431891e63
           - label: candidate
             ref: ${{ github.sha }}
     services:
@@ -120,7 +120,8 @@ jobs:
           python frepplectl.py migrate --plan | tee /tmp/mlcc-fresh-plan.txt
           grep -q "No planned migration operations" /tmp/mlcc-fresh-plan.txt
 
-          # Path B: load the real phase-1 demo at f7f538c, then apply 0003 and 0004.
+          # Path B: load the real phase-1 demo at f7f538c, then upgrade through
+          # the phase-3B migrations 0005 and 0006.
           phase1_checkout="${RUNNER_TEMP}/frepple-phase1-upgrade"
           git worktree add --detach "${phase1_checkout}" f7f538cef7eaa404480e1f385feb9f89067c44d6
           pushd "${phase1_checkout}"
@@ -131,8 +132,8 @@ jobs:
           python -m django load_mlcc_demo
           python -m django shell -c "from freppledb.mlcc.models import MlccRecipe; assert MlccRecipe.objects.filter(source='mlcc_demo').exists()"
           popd
-          python frepplectl.py migrate mlcc 0004
-          python frepplectl.py shell -c "from django.db import connection; from freppledb.mlcc.models import MlccRecipe; assert MlccRecipe.objects.filter(source='mlcc_demo').exists(); assert {'mlcc_precheck_run', 'mlcc_precheck_issue'}.issubset(set(connection.introspection.table_names()))"
+          python frepplectl.py migrate mlcc
+          python frepplectl.py shell -c "from django.db import connection; from freppledb.mlcc.models import MlccRecipe; assert MlccRecipe.objects.filter(source='mlcc_demo').exists(); assert {'mlcc_precheck_run', 'mlcc_precheck_issue', 'mlcc_load_unit_conversion'}.issubset(set(connection.introspection.table_names())); columns={c.name for c in connection.introspection.get_table_description(connection.cursor(), 'operationplan')}; assert {'mlcc_load_quantity', 'mlcc_load_unit'}.issubset(columns)"
 
           # Path C: the upgraded database is idempotent.
           python frepplectl.py migrate --plan | tee /tmp/mlcc-upgraded-plan.txt
@@ -149,7 +150,19 @@ jobs:
           python frepplectl.py check
           python frepplectl.py makemigrations --check --dry-run mlcc
           python test/runtest.py
-          python frepplectl.py test freppledb --verbosity=2
+          if [ "${{ matrix.label }}" = "candidate" ]; then
+            python frepplectl.py test freppledb --verbosity=2
+          else
+            set +e
+            python frepplectl.py test freppledb --verbosity=2 2>&1 | tee /tmp/phase3a-baseline-tests.log
+            baseline_status=${PIPESTATUS[0]}
+            set -e
+            test "$baseline_status" -ne 0
+            test "$(grep -c '^FAIL:' /tmp/phase3a-baseline-tests.log)" -eq 1
+            test "$(grep -c '^ERROR:' /tmp/phase3a-baseline-tests.log)" -eq 0
+            grep -q '^FAIL: test_output_demand' /tmp/phase3a-baseline-tests.log
+            echo "Accepted phase-3A baseline: only the known localized demand-title test fails."
+          fi
 
       - name: Test uninstalling apps
         working-directory: ${{github.workspace}}
@@ -172,11 +185,9 @@ jobs:
           path: logs
           retention-days: 1
 
-      - uses: stefanzweifel/git-auto-commit-action@v7
+      - name: Report post-build generated files
         if: matrix.label == 'candidate'
-        with:
-          commit_message: Grunt to compile and minify css and javascript files
-          file_pattern: "*.min.* *main.js"
+        run: git status --short
 
       - name: Get the version
         if: startsWith(github.ref, 'refs/tags/') && github.repository == 'frePPLe/frepple'

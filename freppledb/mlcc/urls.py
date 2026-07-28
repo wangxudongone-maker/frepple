@@ -21,6 +21,12 @@ if mode != "ASGI":
             serializers.MlccRecipeDetailAPI,
         ),
         (
+            "mlccloadunitconversion",
+            views.MlccLoadUnitConversionList,
+            serializers.MlccLoadUnitConversionAPI,
+            serializers.MlccLoadUnitConversionDetailAPI,
+        ),
+        (
             "mlccequipmentcapability",
             views.MlccEquipmentCapabilityList,
             serializers.MlccEquipmentCapabilityAPI,

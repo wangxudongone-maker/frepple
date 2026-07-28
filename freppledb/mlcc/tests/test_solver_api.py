@@ -1,5 +1,7 @@
 from django.db import connection
+from django.db.models.query import QuerySet
 from django.test import TestCase
+from unittest.mock import patch
 from rest_framework.test import APIRequestFactory, force_authenticate
 
 from freppledb.common.models import User
@@ -11,6 +13,8 @@ from freppledb.mlcc.demo import (
 )
 from freppledb.mlcc.models import (
     MlccPrecheckRun,
+    MlccFurnaceLoad,
+    MlccFurnaceLoadItem,
     MlccScheduleResult,
     MlccScheduleRun,
 )
@@ -20,6 +24,10 @@ from freppledb.mlcc.solver.api import (
     MlccPrecheckResultAPI,
     MlccSolveAPI,
 )
+from freppledb.mlcc.solver.cpsat import solve
+from freppledb.mlcc.solver.service import build_and_validate
+from freppledb.mlcc.solver.solution import SolverParameters
+from freppledb.mlcc.solver.solve_service import persist_preview_solution
 
 
 class SolverAPITest(TestCase):
@@ -117,18 +125,14 @@ class SolverAPITest(TestCase):
         self.assertFalse(response.data["can_start_solver"])
         run_id = response.data["run_id"]
 
-        request = self.request(
-            "get", f"/api/mlcc/precheck/{run_id}/?code=MLCC-P001"
-        )
+        request = self.request("get", f"/api/mlcc/precheck/{run_id}/?code=MLCC-P001")
         response = MlccPrecheckResultAPI.as_view()(request, pk=run_id)
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.data["issues"])
         self.assertTrue(
             all(item["code"] == "MLCC-P001" for item in response.data["issues"])
         )
-        self.assertTrue(
-            all(item["object_url"] for item in response.data["issues"])
-        )
+        self.assertTrue(all(item["object_url"] for item in response.data["issues"]))
 
     def test_invalid_api_options_return_400(self):
         request = self.request(
@@ -196,9 +200,7 @@ class SolverAPITest(TestCase):
         response = MlccSolveAPI.as_view()(request)
         self.assertEqual(response.status_code, 409)
         self.assertEqual(response.data["status"], "BLOCKED")
-        self.assertFalse(
-            MlccScheduleRun.objects.filter(source=INVALID_SOURCE).exists()
-        )
+        self.assertFalse(MlccScheduleRun.objects.filter(source=INVALID_SOURCE).exists())
 
         request = self.request(
             "post",
@@ -207,3 +209,69 @@ class SolverAPITest(TestCase):
         )
         response = MlccPrecheckAPI.as_view()(request)
         self.assertEqual(response.status_code, 400)
+
+    def test_preview_persistence_is_atomic_and_idempotent(self):
+        instance, report, _ = build_and_validate(
+            horizon_start=DEMO_ORIGIN,
+            horizon_days=45,
+            freeze_hours=48,
+            source=VALID_SOURCE,
+        )
+        self.assertEqual(report.blocker_count, 0, report.issues)
+        solution = solve(instance, SolverParameters(max_time_seconds=30))
+        before = (
+            MlccScheduleRun.objects.count(),
+            MlccScheduleResult.objects.count(),
+            MlccFurnaceLoad.objects.filter(status="proposed").count(),
+            MlccFurnaceLoadItem.objects.filter(furnace_load__status="proposed").count(),
+        )
+        original_bulk_create = QuerySet.bulk_create
+
+        def fail_schedule_results(queryset, objects, *args, **kwargs):
+            if queryset.model is MlccScheduleResult:
+                raise RuntimeError("intentional persistence failure")
+            return original_bulk_create(queryset, objects, *args, **kwargs)
+
+        with patch.object(QuerySet, "bulk_create", new=fail_schedule_results):
+            with self.assertRaisesRegex(RuntimeError, "intentional"):
+                persist_preview_solution(
+                    instance,
+                    solution,
+                    source=VALID_SOURCE,
+                )
+        self.assertEqual(
+            before,
+            (
+                MlccScheduleRun.objects.count(),
+                MlccScheduleResult.objects.count(),
+                MlccFurnaceLoad.objects.filter(status="proposed").count(),
+                MlccFurnaceLoadItem.objects.filter(
+                    furnace_load__status="proposed"
+                ).count(),
+            ),
+        )
+
+        first = persist_preview_solution(
+            instance,
+            solution,
+            source=VALID_SOURCE,
+        )
+        counts = (
+            first.results.count(),
+            first.furnace_loads.count(),
+            MlccFurnaceLoadItem.objects.filter(furnace_load__run=first).count(),
+        )
+        second = persist_preview_solution(
+            instance,
+            solution,
+            source=VALID_SOURCE,
+        )
+        self.assertEqual(first.pk, second.pk)
+        self.assertEqual(
+            counts,
+            (
+                second.results.count(),
+                second.furnace_loads.count(),
+                MlccFurnaceLoadItem.objects.filter(furnace_load__run=second).count(),
+            ),
+        )

@@ -13,6 +13,7 @@ from freppledb.mlcc.solver.schema import (
     CustomerOrder,
     Equipment,
     EquipmentCapability,
+    FurnaceLoadRequirement,
     MaterialAvailability,
     PlanningInstance,
     PlanningWindow,
@@ -55,6 +56,22 @@ def valid_instance():
                 required_material_ids=(("material:raw",) if sequence == 1 else ()),
                 original_start_minute=3000 + sequence * 120,
                 original_end_minute=3060 + sequence * 120,
+                load_requirements=(
+                    (
+                        FurnaceLoadRequirement(
+                            resource_id=resource_id,
+                            quantity=1,
+                            load_unit="tray",
+                            source_quantity=Decimal("1"),
+                            source_unit="tray",
+                            conversion_id="identity",
+                            conversion_numerator=1,
+                            conversion_denominator=1,
+                        ),
+                    )
+                    if stage in ("debinding", "sintering")
+                    else ()
+                ),
             )
         )
         equipment.append(
@@ -121,6 +138,8 @@ def valid_instance():
                 expiry_date=None,
                 active=True,
                 setup_family="debinding-a",
+                furnace_program_key="DEBINDING-V1",
+                compatibility_group="CERAMIC-A",
             ),
             Recipe(
                 id="recipe:sintering",
@@ -131,6 +150,8 @@ def valid_instance():
                 expiry_date=None,
                 active=True,
                 setup_family="sintering-a",
+                furnace_program_key="SINTERING-V1",
+                compatibility_group="CERAMIC-A",
             ),
         ),
         compatibility_rules=(
@@ -140,6 +161,22 @@ def valid_instance():
                 family_a="C0G",
                 family_b="X7R",
                 rule_type="forbid",
+                enabled=True,
+            ),
+            CompatibilityRule(
+                id="compatibility:debinding-self",
+                stage="debinding",
+                family_a="X7R",
+                family_b="X7R",
+                rule_type="allow",
+                enabled=True,
+            ),
+            CompatibilityRule(
+                id="compatibility:sintering-self",
+                stage="sintering",
+                family_a="X7R",
+                family_b="X7R",
+                rule_type="allow",
                 enabled=True,
             ),
         ),

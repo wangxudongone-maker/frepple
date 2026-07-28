@@ -42,5 +42,7 @@ registerAttribute(
         ("mlcc_lot_number", _("MLCC lot number"), "string"),
         ("mlcc_recipe_version", _("MLCC recipe version"), "string"),
         ("mlcc_schedulable", _("MLCC schedulable"), "boolean"),
+        ("mlcc_load_quantity", _("MLCC furnace load quantity"), "number"),
+        ("mlcc_load_unit", _("MLCC furnace load unit"), "string"),
     ],
 )

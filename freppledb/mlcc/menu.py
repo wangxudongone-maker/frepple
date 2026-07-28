@@ -8,6 +8,7 @@ from .models import (
     MlccEquipmentCapability,
     MlccFurnaceLoad,
     MlccFurnaceLoadItem,
+    MlccLoadUnitConversion,
     MlccQualityHold,
     MlccPrecheckIssue,
     MlccPrecheckRun,
@@ -22,6 +23,7 @@ from .views import (
     MlccEquipmentCapabilityList,
     MlccFurnaceLoadItemList,
     MlccFurnaceLoadList,
+    MlccLoadUnitConversionList,
     MlccQualityHoldList,
     MlccPrecheckIssueList,
     MlccPrecheckRunList,
@@ -35,6 +37,14 @@ menu.addGroup("mlcc", label=_("MLCC planning"), index=250)
 
 _items = (
     ("recipes", _("Recipes"), "mlccrecipe", MlccRecipeList, MlccRecipe, 100),
+    (
+        "load-unit-conversions",
+        _("Load unit conversions"),
+        "mlccloadunitconversion",
+        MlccLoadUnitConversionList,
+        MlccLoadUnitConversion,
+        105,
+    ),
     (
         "capabilities",
         _("Equipment capabilities"),

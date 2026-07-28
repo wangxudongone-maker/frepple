@@ -15,7 +15,7 @@ from freppledb.mlcc.solver.solve_service import persist_preview_solution
 
 
 class Command(BaseCommand):
-    help = "Create an MLCC CP-SAT baseline schedule preview"
+    help = "Create an MLCC CP-SAT furnace-batching schedule preview"
 
     def add_arguments(self, parser):
         parser.add_argument("--database", default=DEFAULT_DB_ALIAS)
@@ -70,9 +70,7 @@ class Command(BaseCommand):
 
         validation = SchedulingSolutionValidator().validate(instance, solution)
         if solution.status not in ("FEASIBLE", "OPTIMAL"):
-            raise CommandError(
-                f"CP-SAT returned {solution.status}: {solution.message}"
-            )
+            raise CommandError(f"CP-SAT returned {solution.status}: {solution.message}")
         if not validation.valid:
             raise CommandError(
                 f"Solution validator found {validation.violation_count} violation(s)"
@@ -100,6 +98,8 @@ class Command(BaseCommand):
             self.style.SUCCESS(
                 f"MLCC CP-SAT preview written to {output}; "
                 f"status={solution.status}, tasks={solution.scheduled_task_count}, "
+                f"furnace_loads={len(solution.furnace_loads)}, "
+                f"load_delta={solution.metric_deltas.get('furnace_load_count', 0)}, "
                 f"violations={validation.violation_count}, "
                 f"duration={solution.wall_time_seconds:.3f}s"
                 + (f", preview={run.name}" if run else "")

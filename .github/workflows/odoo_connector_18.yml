@@ -8,9 +8,6 @@ on:
 permissions:
   contents: read
 
-env:
-  odoo_connector_branch: 18.0-dev
-
 jobs:
   build:
     runs-on: ubuntu-24.04
@@ -47,7 +44,14 @@ jobs:
 
       - name: Build
         run: |
-          git submodule update --remote --checkout --force
+          git submodule sync --recursive
+          git submodule update --init --recursive --checkout
+          echo "MAIN_REPOSITORY_SHA=$(git rev-parse HEAD)"
+          git submodule status --recursive
+          if git submodule status --recursive | grep -Eq '^[+-U]'; then
+            echo "A submodule isn't checked out at the SHA locked by the main repository"
+            exit 1
+          fi
           grunt
           cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=Release
           cmake --build ${{github.workspace}}/build --config Release --target package -- -j 4
@@ -59,10 +63,6 @@ jobs:
 
       - name: Odoo integration test
         run: |
-          # First make the checkout unshallow
-          git -C freppledb/odoo/odoo_addon remote set-branches origin '*'
-          git -C freppledb/odoo/odoo_addon fetch --all
-          git -C freppledb/odoo/odoo_addon checkout "remotes/origin/${{ env.odoo_connector_branch }}"
           sed -i 's/# "freppledb.odoo"/"freppledb.odoo"/g' djangosettings.py
           export POSTGRES_HOST=localhost
           export POSTGRES_PORT=5432
@@ -82,7 +82,7 @@ jobs:
         with:
           connection_url: ${{secrets.MAIL_CONNECTION}}
           secure: false
-          subject: "Github action failure: Failure Odoo ${{ env.odoo_connector_branch }} integration test"
+          subject: "Github action failure: Failure Odoo 18 locked integration test"
           from: '"frepple devops" <devops@frepple.com>'
           to: '"frepple devops" <devops@frepple.com>'
           body: |

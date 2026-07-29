@@ -14,6 +14,9 @@
 | `furnace_loads` | 明确炉次决策及成员 |
 | `orders` | 订单完工、延期、优先级权重 |
 | `objective_stages` | 可行、延期、炉次数、总完工时间四个阶段 |
+| `solution_mode` | 实际输出模式：`phase3b_multi_batch`、`phase3a_fallback` 或 `phase3c_transition` |
+| `fallback_reason` | 使用安全回退时的机器可读原因；非回退结果为 `null` |
+| `last_successful_stage` | 返回结果之前最后成功完成的分层优化阶段 |
 | `phase3a_baseline_metrics` | 单批炉次安全基线 |
 | `phase3b_metrics` | 组炉方案指标 |
 | `metric_deltas` | B 减 A 的延期、炉次数、完工时间及平均/P50/P90 装载率 ppm |
@@ -41,3 +44,12 @@
 
 数组按稳定 ID 排序，字典键排序，Decimal 写成十进制字符串。求解耗时和
 求解界属于运行元数据；输入指纹、业务分配、炉次成员、参数和指标可追溯。
+
+## 回退来源
+
+`parameters.furnace_mode` 始终记录实际执行模式。第三阶段 B 的正常结果为
+`multi_batch_loads`；返回第三阶段 A 安全方案时为 `one_batch_per_run`，同时
+`solution_mode=phase3a_fallback` 并填写 `fallback_reason`。只有超时、
+`UNKNOWN` 或未找到更优且已经通过独立 validator 的组炉方案时允许安全回退。
+模型构建错误和 CP-SAT `MODEL_INVALID` 返回空的 `MODEL_INVALID` 结果，不得
+伪装为成功回退，也不得持久化。

@@ -30,6 +30,7 @@ from .solution import (
     SolverParameters,
     TaskAssignment,
 )
+from .solution_validator import SchedulingSolutionValidator
 from .validator import PlanningInstanceValidator
 
 PrecheckBlockedError = phase3a.PrecheckBlockedError
@@ -859,9 +860,11 @@ def _baseline_with_loads(instance, solution, parameters):
         )
     baseline = replace(
         solution,
-        parameters=parameters,
+        parameters=replace(parameters, furnace_mode="one_batch_per_run"),
         assignments=tuple(assignments),
         furnace_loads=tuple(sorted(loads, key=lambda item: item.load_id)),
+        solution_mode="phase3a_fallback",
+        fallback_reason=None,
     )
     metrics = _metrics(baseline)
     return replace(
@@ -879,6 +882,29 @@ def _baseline_with_loads(instance, solution, parameters):
             },
         },
         message="Phase-3A one-batch-per-furnace validated fallback.",
+    )
+
+
+def _model_invalid_solution(
+    instance,
+    parameters,
+    started,
+    message,
+    baseline_metrics=None,
+    last_successful_stage=None,
+):
+    return SchedulingSolution(
+        status="MODEL_INVALID",
+        input_fingerprint=planning_instance_fingerprint(instance),
+        solver_name="Google OR-Tools CP-SAT",
+        solver_version=ortools.__version__,
+        parameters=replace(parameters, furnace_mode="multi_batch_loads"),
+        wall_time_seconds=round(perf_counter() - started, 6),
+        message=message,
+        solution_mode="phase3b_multi_batch",
+        fallback_reason=None,
+        last_successful_stage=last_successful_stage,
+        phase3a_baseline_metrics=baseline_metrics or {},
     )
 
 
@@ -911,6 +937,16 @@ def _finalize(instance, parameters, snapshot, stages, started, baseline_metrics)
         },
         wall_time_seconds=round(perf_counter() - started, 6),
         optimality_gap=optimality_gap,
+        solution_mode="phase3b_multi_batch",
+        fallback_reason=None,
+        last_successful_stage=next(
+            (
+                item.name
+                for item in reversed(stages)
+                if item.status in ("FEASIBLE", "OPTIMAL")
+            ),
+            None,
+        ),
     )
     metrics = _metrics(solution)
     return replace(
@@ -938,7 +974,10 @@ def _finalize(instance, parameters, snapshot, stages, started, baseline_metrics)
 def solve(instance, parameters=None):
     """Solve phase 3B without accessing Django model instances."""
 
-    parameters = parameters or SolverParameters()
+    parameters = replace(
+        parameters or SolverParameters(),
+        furnace_mode="multi_batch_loads",
+    )
     report = PlanningInstanceValidator().validate(instance)
     if report.blocker_count:
         raise PrecheckBlockedError(report)
@@ -956,20 +995,57 @@ def solve(instance, parameters=None):
     )
     baseline_raw = phase3a.solve(instance, baseline_parameters)
     if baseline_raw.status not in ("FEASIBLE", "OPTIMAL"):
-        return replace(baseline_raw, parameters=parameters)
+        return replace(
+            baseline_raw,
+            solution_mode="phase3a_fallback",
+            fallback_reason=f"phase3a_baseline_{baseline_raw.status.lower()}",
+        )
     fallback = _baseline_with_loads(instance, baseline_raw, parameters)
     baseline_metrics = fallback.phase3a_baseline_metrics
+    fallback_validation = SchedulingSolutionValidator().validate(instance, fallback)
+    if not fallback_validation.valid:
+        return _model_invalid_solution(
+            instance,
+            parameters,
+            started,
+            "Phase-3A fallback failed independent validation: "
+            + "; ".join(
+                f"{item.code}:{item.object_id}" for item in fallback_validation.violations
+            ),
+            baseline_metrics,
+            baseline_raw.last_successful_stage,
+        )
+
+    def safe_fallback(reason, last_successful_stage=None):
+        return replace(
+            fallback,
+            fallback_reason=reason,
+            last_successful_stage=(
+                last_successful_stage or baseline_raw.last_successful_stage
+            ),
+            message=(
+                "Phase-3A one-batch-per-furnace validated fallback. "
+                f"Reason: {reason}."
+            ),
+        )
 
     remaining = parameters.max_time_seconds - (perf_counter() - started)
     if remaining <= 0.01:
-        return fallback
+        return safe_fallback("phase3b_time_limit_exhausted_before_model")
     try:
         artifacts = _build_model(
             instance,
             baseline_metrics["weighted_tardiness"],
         )
-    except ModelBuildError:
-        return fallback
+    except ModelBuildError as exc:
+        return _model_invalid_solution(
+            instance,
+            parameters,
+            started,
+            str(exc),
+            baseline_metrics,
+            baseline_raw.last_successful_stage,
+        )
 
     stages = []
     snapshots = []
@@ -997,8 +1073,33 @@ def solve(instance, parameters=None):
         if objective is not None:
             artifacts.model.Add(objective <= value)
 
+    if stages and stages[-1].status == "MODEL_INVALID":
+        return _model_invalid_solution(
+            instance,
+            parameters,
+            started,
+            "CP-SAT rejected the phase-3B model.",
+            baseline_metrics,
+            (
+                next(
+                    (
+                        item.name
+                        for item in reversed(stages[:-1])
+                        if item.status in ("FEASIBLE", "OPTIMAL")
+                    ),
+                    None,
+                )
+                or baseline_raw.last_successful_stage
+            ),
+        )
     if not snapshots:
-        return fallback
+        return safe_fallback(
+            (
+                "phase3b_unknown"
+                if stages and stages[-1].status == "UNKNOWN"
+                else "phase3b_no_better_multi_batch_solution"
+            )
+        )
     candidate = _finalize(
         instance,
         parameters,
@@ -1008,10 +1109,27 @@ def solve(instance, parameters=None):
         baseline_metrics,
     )
     candidate_metrics = candidate.phase3b_metrics
+    candidate_validation = SchedulingSolutionValidator().validate(instance, candidate)
+    if not candidate_validation.valid:
+        return _model_invalid_solution(
+            instance,
+            parameters,
+            started,
+            "Phase-3B candidate failed independent validation: "
+            + "; ".join(
+                f"{item.code}:{item.object_id}"
+                for item in candidate_validation.violations
+            ),
+            baseline_metrics,
+            candidate.last_successful_stage,
+        )
     if (
         candidate_metrics["weighted_tardiness"] > baseline_metrics["weighted_tardiness"]
         or candidate_metrics["furnace_load_count"]
         > baseline_metrics["furnace_load_count"]
     ):
-        return fallback
+        return safe_fallback(
+            "phase3b_no_better_multi_batch_solution",
+            candidate.last_successful_stage,
+        )
     return candidate

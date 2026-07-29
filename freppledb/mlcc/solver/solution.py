@@ -11,6 +11,11 @@ from typing import Any
 from .serializer import to_primitive
 
 SOLUTION_SCHEMA_VERSION = "mlcc-schedule-solution/v1"
+SOLUTION_MODES = (
+    "phase3b_multi_batch",
+    "phase3a_fallback",
+    "phase3c_transition",
+)
 
 
 @dataclass(frozen=True)
@@ -92,6 +97,9 @@ class SchedulingSolution:
     wall_time_seconds: float = 0.0
     optimality_gap: float | None = None
     message: str = ""
+    solution_mode: str = "phase3b_multi_batch"
+    fallback_reason: str | None = None
+    last_successful_stage: str | None = None
     phase3a_baseline_metrics: dict[str, Any] = field(default_factory=dict)
     phase3b_metrics: dict[str, Any] = field(default_factory=dict)
     metric_deltas: dict[str, Any] = field(default_factory=dict)

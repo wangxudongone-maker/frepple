@@ -170,13 +170,19 @@ class SolverAPITest(TestCase):
         self.assertIn(response.data["status"], ("FEASIBLE", "OPTIMAL"))
         self.assertEqual(response.data["hard_constraint_violations"], 0)
         self.assertEqual(response.data["solution"]["solver_version"], "9.10.4067")
-        self.assertEqual(len(response.data["solution"]["assignments"]), 500)
-        self.assertTrue(
-            MlccScheduleRun.objects.filter(
-                pk=response.data["preview_run_id"],
-                status="complete",
-            ).exists()
+        self.assertEqual(
+            response.data["solution"]["solution_mode"],
+            "phase3b_multi_batch",
         )
+        self.assertIsNone(response.data["solution"]["fallback_reason"])
+        self.assertEqual(len(response.data["solution"]["assignments"]), 500)
+        run = MlccScheduleRun.objects.get(
+            pk=response.data["preview_run_id"],
+            status="complete",
+        )
+        self.assertEqual(run.parameters["solution_mode"], "phase3b_multi_batch")
+        self.assertIsNone(run.parameters["fallback_reason"])
+        self.assertTrue(run.parameters["last_successful_stage"])
         self.assertEqual(
             MlccScheduleResult.objects.filter(
                 run_id=response.data["preview_run_id"],
@@ -256,6 +262,8 @@ class SolverAPITest(TestCase):
             solution,
             source=VALID_SOURCE,
         )
+        self.assertEqual(first.parameters["solution_mode"], solution.solution_mode)
+        self.assertEqual(first.parameters["fallback_reason"], solution.fallback_reason)
         counts = (
             first.results.count(),
             first.furnace_loads.count(),

@@ -11,6 +11,11 @@ Django ORM；结果只写入 MLCC 预览表，不修改 `OperationPlan`，不确
 `solver/cpsat.py` 先取得并验证该基线，再构建第三阶段 B 模型。若组炉模型在
 时限内没有得到不劣于基线的解，返回经过验证的单批炉次方案。
 
+回退结果通过 `solution_mode=phase3a_fallback`、实际
+`furnace_mode=one_batch_per_run`、`fallback_reason` 和
+`last_successful_stage` 明确标记。模型构建错误返回 `MODEL_INVALID`，不会
+静默回退；所有非可行状态都被预览持久化入口拒绝。
+
 ## 炉次决策
 
 每个启用炉次有独立的激活、成员分配、设备分配、开始、结束和可选区间变量。

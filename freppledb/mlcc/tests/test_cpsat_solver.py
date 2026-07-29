@@ -1,6 +1,7 @@
 import ast
 import inspect
 from dataclasses import replace
+from unittest.mock import patch
 
 from django.test import SimpleTestCase
 from ortools.sat.python import cp_model
@@ -144,6 +145,9 @@ class CpSatPureSolverTest(SimpleTestCase):
         self.assertEqual(furnace[0].start_minute, furnace[1].start_minute)
         self.assertEqual(furnace[0].end_minute, furnace[1].end_minute)
         self.assertEqual(solution.parameters.furnace_mode, "multi_batch_loads")
+        self.assertEqual(solution.solution_mode, "phase3b_multi_batch")
+        self.assertIsNone(solution.fallback_reason)
+        self.assertEqual(solution.last_successful_stage, "makespan")
         self.assertLess(
             solution.phase3b_metrics["furnace_load_count"],
             solution.phase3a_baseline_metrics["furnace_load_count"],
@@ -170,6 +174,12 @@ class CpSatPureSolverTest(SimpleTestCase):
         )
         self.assertEqual(model_invalid.status, "MODEL_INVALID")
         self.assertIn("requires resource", model_invalid.message)
+        self.assertEqual(model_invalid.parameters.furnace_mode, "one_batch_per_run")
+        self.assertEqual(model_invalid.solution_mode, "phase3a_fallback")
+        self.assertEqual(
+            model_invalid.fallback_reason,
+            "phase3a_baseline_model_invalid",
+        )
 
         short_window = replace(
             instance.window,
@@ -182,6 +192,43 @@ class CpSatPureSolverTest(SimpleTestCase):
         self.assertEqual(infeasible.status, "INFEASIBLE")
         self.assertEqual(cpsat._status_name(cp_model.UNKNOWN), "UNKNOWN")
 
+    def test_phase3b_model_build_error_never_silently_falls_back(self):
+        instance = valid_instance()
+        with patch.object(
+            cpsat,
+            "_build_model",
+            side_effect=cpsat.ModelBuildError("deliberately broken phase-3B model"),
+        ):
+            solution = solve(instance, self.parameters)
+        self.assertEqual(solution.status, "MODEL_INVALID")
+        self.assertEqual(solution.solution_mode, "phase3b_multi_batch")
+        self.assertEqual(solution.parameters.furnace_mode, "multi_batch_loads")
+        self.assertIsNone(solution.fallback_reason)
+        self.assertIn("deliberately broken", solution.message)
+        self.assertEqual(solution.scheduled_task_count, 0)
+
+    def test_time_limit_fallback_records_actual_mode_and_provenance(self):
+        instance = valid_instance()
+        baseline_parameters = replace(
+            self.parameters,
+            furnace_mode="one_batch_per_run",
+        )
+        baseline = cpsat.phase3a.solve(instance, baseline_parameters)
+        self.assertIn(baseline.status, ("FEASIBLE", "OPTIMAL"))
+        with (
+            patch.object(cpsat.phase3a, "solve", return_value=baseline),
+            patch.object(cpsat, "perf_counter", side_effect=(0.0, 100.0)),
+        ):
+            solution = solve(instance, self.parameters)
+        self.assertEqual(solution.solution_mode, "phase3a_fallback")
+        self.assertEqual(solution.parameters.furnace_mode, "one_batch_per_run")
+        self.assertEqual(
+            solution.fallback_reason,
+            "phase3b_time_limit_exhausted_before_model",
+        )
+        self.assertIsNotNone(solution.last_successful_stage)
+        self.assertTrue(self.validator.validate(instance, solution).valid)
+
     def test_json_round_trip_and_metadata_are_deterministic(self):
         instance = valid_instance()
         loaded = planning_instance_from_json(planning_instance_json(instance))
@@ -193,6 +240,10 @@ class CpSatPureSolverTest(SimpleTestCase):
         self.assertEqual(first.parameters, second.parameters)
         self.assertIn(
             '"furnace_mode":"multi_batch_loads"', scheduling_solution_json(first)
+        )
+        self.assertIn(
+            '"solution_mode":"phase3b_multi_batch"',
+            scheduling_solution_json(first),
         )
 
     def test_pure_solver_has_no_django_or_orm_dependency(self):

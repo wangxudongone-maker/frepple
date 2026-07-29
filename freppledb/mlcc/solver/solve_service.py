@@ -89,13 +89,19 @@ def persist_preview_solution(
                 "solver_name": solution.solver_name,
                 "solver_version": solution.solver_version,
                 "solver_parameters": asdict(solution.parameters),
+                "solution_mode": solution.solution_mode,
+                "fallback_reason": solution.fallback_reason,
+                "last_successful_stage": solution.last_successful_stage,
                 "objective_values": solution.objective_values,
                 "optimality_gap": solution.optimality_gap,
                 "phase3a_baseline_metrics": solution.phase3a_baseline_metrics,
                 "phase3b_metrics": solution.phase3b_metrics,
                 "metric_deltas": solution.metric_deltas,
             },
-            message="CP-SAT furnace-batching preview; no production plan was updated.",
+            message=(
+                f"CP-SAT {solution.solution_mode} preview; "
+                "no production plan was updated."
+            ),
             source=source,
         )
         run.save(using=database)

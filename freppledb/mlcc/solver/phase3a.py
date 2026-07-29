@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from time import perf_counter
 
 import ortools
@@ -315,6 +315,7 @@ def _terminal_solution(
     started,
     stages=(),
     message="",
+    last_successful_stage=None,
 ):
     return SchedulingSolution(
         status=status,
@@ -325,13 +326,18 @@ def _terminal_solution(
         objective_stages=tuple(stages),
         wall_time_seconds=round(perf_counter() - started, 6),
         message=message,
+        solution_mode="phase3a_fallback",
+        last_successful_stage=last_successful_stage,
     )
 
 
 def solve(instance, parameters=None):
     """Solve a pure planning instance; this module never accesses Django ORM."""
 
-    parameters = parameters or SolverParameters()
+    parameters = replace(
+        parameters or SolverParameters(),
+        furnace_mode="one_batch_per_run",
+    )
     if parameters.max_time_seconds <= 0:
         raise ValueError("max_time_seconds must be greater than zero")
     if parameters.num_search_workers <= 0:
@@ -369,6 +375,7 @@ def solve(instance, parameters=None):
             started,
             stages,
             "No strictly feasible schedule was found.",
+            last_successful_stage=None,
         )
     snapshots.append(_snapshot(instance, artifacts, feasibility_solver))
 
@@ -386,6 +393,8 @@ def solve(instance, parameters=None):
             objective_stages=tuple(stages),
             wall_time_seconds=round(perf_counter() - started, 6),
             message="Feasible schedule found; optimization time limit exhausted.",
+            solution_mode="phase3a_fallback",
+            last_successful_stage="feasibility",
         )
 
     artifacts.model.Minimize(artifacts.weighted_tardiness)
@@ -418,6 +427,8 @@ def solve(instance, parameters=None):
             objective_stages=tuple(stages),
             wall_time_seconds=round(perf_counter() - started, 6),
             message="Tardiness optimization did not improve the feasible schedule.",
+            solution_mode="phase3a_fallback",
+            last_successful_stage="feasibility",
         )
     snapshots.append(_snapshot(instance, artifacts, tardiness_solver))
     artifacts.model.Add(artifacts.weighted_tardiness <= tardiness_value)
@@ -437,6 +448,8 @@ def solve(instance, parameters=None):
             objective_values={"weighted_tardiness": tardiness_value},
             wall_time_seconds=round(perf_counter() - started, 6),
             message="Weighted tardiness optimized; makespan time limit exhausted.",
+            solution_mode="phase3a_fallback",
+            last_successful_stage="weighted_tardiness",
         )
 
     artifacts.model.Minimize(artifacts.makespan)
@@ -491,6 +504,12 @@ def solve(instance, parameters=None):
         objective_values=objective_values,
         wall_time_seconds=round(perf_counter() - started, 6),
         optimality_gap=gap,
+        solution_mode="phase3a_fallback",
+        last_successful_stage=(
+            "makespan"
+            if status in (cp_model.FEASIBLE, cp_model.OPTIMAL)
+            else "weighted_tardiness"
+        ),
         message=(
             ""
             if status in (cp_model.FEASIBLE, cp_model.OPTIMAL)

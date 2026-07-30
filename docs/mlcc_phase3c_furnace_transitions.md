@@ -40,6 +40,16 @@ PostgreSQL
 
 同层级同优先级多条有效规则是冲突。缺少规则默认禁止。相同炉程连续运行也必须维护显式自转换规则。
 
+转换规则正式采用 `transition_rule_resolution_mode=planning_origin_snapshot`：
+
+- 规则主数据快照时刻固定为 `PlanningWindow.origin`；
+- 同一次求解中的预检、CP-SAT 建模和独立 solution validator 共用该快照；
+- 即使排程跨越规则生效日期边界，也不会在运行中切换规则；
+- 主数据规则变化后必须重新构建实例并重新求解；
+- 跨日期动态规则弧属于后续增强范围，本阶段不实现。
+
+输出在 `phase3c_metrics` 及每条转换的 `resolution_evidence` 中记录解析模式、快照时刻和有效规则集指纹。指纹只使用固定起点和稳定规则 ID，不读取系统当前时间。
+
 ## CP-SAT 相邻弧模型
 
 第三阶段 C 保留第三阶段 B 已确定的炉次成员分组，再优化炉次设备、时间和相邻顺序，不退回批次级全量两两排序。
@@ -71,9 +81,10 @@ transition.duration == resolved_rule.duration
 
 1. 严格可行；
 2. 最小化加权延期；
-3. 最小化炉次数；
-4. 最小化总转换分钟；
-5. 最小化总完工时间。
+3. 最小化总转换分钟；
+4. 最小化总完工时间。
+
+第三阶段 C 不优化炉次数。炉次及成员关系由第三阶段 B 结果继承，或由确定性预分炉生成；C 只优化设备分配、开始时间和相邻顺序。`furnace_load_count` 继续作为报告指标保留，但不进入目标函数，也不产生目标锁定约束。输出用 `furnace_load_count_source=phase3b_inherited|deterministic_pregrouped` 和 `furnace_load_count_optimized=false` 明确来源与语义。
 
 `setup_cost` 只汇总到报告，不与时间、能耗或货币混合成未经验证的总分。
 
@@ -89,7 +100,7 @@ transition.duration == resolved_rule.duration
 
 当第三阶段 B 因时限返回经过验证的第三阶段 A 单批炉次时，C 阶段不会在全部单批炉次上建立全量相邻弧。它按工序、显式炉程、候选设备、兼容范围及上游炉次释放边界进行确定性预分炉，单个预分炉最多 32 个成员；冻结炉次及其上游炉工序祖先保持原分组。预分炉只是缩小 C 模型的种子，不会被标记为 B 的求解结果，最终排程仍必须通过独立 C 级 validator。
 
-`phase3b_reference_metrics` 明确记录 `raw_solution_mode`、`raw_fallback_reason`、`raw_furnace_load_count`、`grouping_source`、`grouping_furnace_load_count`、B 参考耗时和预分炉耗时，保证回退来源和性能证据可审计。
+`phase3b_reference_metrics` 明确记录 `raw_solution_mode`、`raw_fallback_reason`、`raw_furnace_load_count`、`grouping_source`、`grouping_furnace_load_count`、`furnace_load_count_source`、`furnace_load_count_optimized`、B 参考耗时和预分炉耗时，保证回退来源和性能证据可审计。
 
 B 没有转换时间，因此 B/C 延期差不是算法退化结论。未经 C 级 validator 验证的 B 解绝不作为 C 的回退：
 
@@ -105,6 +116,7 @@ B 没有转换时间，因此 B/C 延期差不是算法退化结论。未经 C �
 - 每个炉次恰有一条入转换，至多一个业务后继；
 - 首炉引用正确初始状态；
 - 规则方向、作用域、优先级、生效期和时长解析唯一；
+- 模型输出记录的规则快照模式、时刻和指纹与 `PlanningWindow.origin` 完全一致；
 - 炉程执行后状态与下一条转换来源状态连续；
 - 炉次、转换、普通任务和不可用日历不重叠；
 - 冻结炉次及冻结转换未变化；

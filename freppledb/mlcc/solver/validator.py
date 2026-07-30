@@ -9,7 +9,11 @@ from decimal import Decimal
 
 from .reasons import PrecheckIssue, issue
 from .schema import PROCESS_STAGE_ORDER, PlanningInstance
-from .transition_rules import resolve_transition_rule, rule_is_effective
+from .transition_rules import (
+    resolve_transition_rule,
+    rule_is_effective,
+    transition_rule_snapshot,
+)
 
 
 @dataclass(frozen=True)
@@ -47,6 +51,7 @@ class PlanningInstanceValidator:
 
     def validate(self, instance: PlanningInstance):
         self.instance = instance
+        self.transition_rule_snapshot = transition_rule_snapshot(instance)
         self.issues = []
         self._validate_routings()
         self._validate_standard_times()
@@ -266,7 +271,7 @@ class PlanningInstanceValidator:
     def _validate_transition_rules(self):
         programs = {item.id: item for item in self.instance.furnace_programs}
         equipment = {item.id: item for item in self.instance.equipment}
-        origin_date = date.fromisoformat(self.instance.window.origin[:10])
+        origin_date = self.transition_rule_snapshot.snapshot_date
         active_by_resolution_key = defaultdict(list)
         for rule in self.instance.furnace_transition_rules:
             invalid = (
@@ -364,6 +369,7 @@ class PlanningInstanceValidator:
                         step.stage,
                         from_state,
                         program_id,
+                        self.transition_rule_snapshot,
                     )
                     if resolution.conflict:
                         key = tuple(resolution.candidate_rule_ids)
@@ -645,6 +651,7 @@ class PlanningInstanceValidator:
                     load.stage,
                     from_state,
                     program_id,
+                    self.transition_rule_snapshot,
                 )
                 invalid = (
                     resolution.conflict

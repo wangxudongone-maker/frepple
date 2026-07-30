@@ -36,7 +36,7 @@ from .solution import (
     TaskAssignment,
 )
 from .solution_validator import SchedulingSolutionValidator
-from .transition_rules import resolve_transition_rule
+from .transition_rules import resolve_transition_rule, transition_rule_snapshot
 from .validator import PlanningInstanceValidator
 
 PrecheckBlockedError = phase3a.PrecheckBlockedError
@@ -85,9 +85,9 @@ class _Artifacts:
     transition_arcs: tuple[_TransitionArc, ...]
     order_variables: dict
     weighted_tardiness: object
-    load_count: object
     transition_minutes: object
     makespan: object
+    transition_rule_snapshot: object
 
 
 def _candidate_resources(instance, members, duration, indexed_capabilities):
@@ -393,8 +393,14 @@ def _add_segment_membership(
         model.Add(presence == 0)
 
 
-def _build_model(instance, reference, fixed_reference_sequence=False):
+def _build_model(
+    instance,
+    reference,
+    fixed_reference_sequence=False,
+    rule_snapshot=None,
+):
     horizon = instance.window.horizon_minutes
+    rule_snapshot = rule_snapshot or transition_rule_snapshot(instance)
     steps = tuple(schedulable_steps(instance))
     if horizon <= 0 or not steps:
         raise ModelBuildError("Planning horizon and schedulable tasks are required")
@@ -672,6 +678,7 @@ def _build_model(instance, reference, fixed_reference_sequence=False):
                 node.stage,
                 state.state_key,
                 node.furnace_program_id,
+                rule_snapshot,
             )
             if resolution.allowed:
                 first = model.NewBoolVar(f"circuit-first:{resource_id}:{node.load_id}")
@@ -712,6 +719,7 @@ def _build_model(instance, reference, fixed_reference_sequence=False):
                     successor.stage,
                     predecessor_program.resulting_post_state_key,
                     successor.furnace_program_id,
+                    rule_snapshot,
                 )
                 if (
                     not resolution.allowed
@@ -836,7 +844,6 @@ def _build_model(instance, reference, fixed_reference_sequence=False):
         order_variables[order.id] = (completion, tardiness, weight)
 
     weighted_tardiness = sum(weighted_terms) if weighted_terms else 0
-    load_count = sum(value for node in load_nodes for value, _ in node.resources)
     transition_minutes = sum(
         item.presence * item.rule.duration_minutes for item in transition_arcs
     )
@@ -852,9 +859,9 @@ def _build_model(instance, reference, fixed_reference_sequence=False):
         transition_arcs=tuple(transition_arcs),
         order_variables=order_variables,
         weighted_tardiness=weighted_tardiness,
-        load_count=load_count,
         transition_minutes=transition_minutes,
         makespan=makespan,
+        transition_rule_snapshot=rule_snapshot,
     )
 
 
@@ -1003,6 +1010,15 @@ def _snapshot(instance, artifacts, solver):
                     "priority": arc.rule.priority,
                     "default_if_missing": "forbid",
                     "rule_id": arc.rule.id,
+                    "transition_rule_resolution_mode": (
+                        artifacts.transition_rule_snapshot.resolution_mode
+                    ),
+                    "transition_rule_snapshot_at": (
+                        artifacts.transition_rule_snapshot.snapshot_at
+                    ),
+                    "transition_rule_snapshot_fingerprint": (
+                        artifacts.transition_rule_snapshot.fingerprint
+                    ),
                 },
             )
         )
@@ -1118,7 +1134,8 @@ def _snapshot(instance, artifacts, solver):
     )
 
 
-def _reference_valid_under_phase3c(instance, reference):
+def _reference_valid_under_phase3c(instance, reference, rule_snapshot=None):
+    rule_snapshot = rule_snapshot or transition_rule_snapshot(instance)
     programs = {item.id: item for item in instance.furnace_programs}
     states = {item.resource_id: item for item in instance.furnace_state_snapshots}
     by_resource = defaultdict(list)
@@ -1145,6 +1162,7 @@ def _reference_valid_under_phase3c(instance, reference):
                 load.operation_type,
                 from_state,
                 program_id,
+                rule_snapshot,
             )
             ready = previous.end_minute if previous else state.available_minute
             if (
@@ -1202,10 +1220,20 @@ def _metrics(solution):
     }
 
 
+def _furnace_load_count_source(reference_provenance):
+    if (
+        (reference_provenance or {}).get("grouping_source")
+        == "deterministic_phase3c_preaggregation"
+    ):
+        return "deterministic_pregrouped"
+    return "phase3b_inherited"
+
+
 def _finalize(
     instance,
     parameters,
     snapshot,
+    rule_snapshot,
     stages,
     started,
     reference_metrics,
@@ -1261,7 +1289,20 @@ def _finalize(
             None,
         ),
     )
-    phase3c_metrics = _metrics(solution)
+    phase3c_metrics = {
+        **_metrics(solution),
+        "furnace_load_count_source": _furnace_load_count_source(
+            reference_provenance
+        ),
+        "furnace_load_count_optimized": False,
+        "transition_rule_resolution_mode": rule_snapshot.resolution_mode,
+        "transition_rule_snapshot_at": rule_snapshot.snapshot_at,
+        "transition_rule_snapshot_fingerprint": rule_snapshot.fingerprint,
+        "effective_transition_rule_ids": rule_snapshot.effective_rule_ids,
+        "selected_transition_rule_ids": tuple(
+            sorted({item.rule_id for item in transitions})
+        ),
+    }
     phase3b_reference_metrics = {
         **reference_metrics,
         "valid_under_phase3c_constraints": reference_valid,
@@ -1313,6 +1354,7 @@ def _empty_solution(
     reference_metrics=None,
     last_successful_stage=None,
 ):
+    rule_snapshot = transition_rule_snapshot(instance)
     return SchedulingSolution(
         status=status,
         input_fingerprint=planning_instance_fingerprint(instance),
@@ -1325,6 +1367,14 @@ def _empty_solution(
         fallback_reason=None,
         last_successful_stage=last_successful_stage,
         phase3b_reference_metrics=reference_metrics or {},
+        phase3c_metrics={
+            "furnace_load_count_optimized": False,
+            "transition_rule_resolution_mode": rule_snapshot.resolution_mode,
+            "transition_rule_snapshot_at": rule_snapshot.snapshot_at,
+            "transition_rule_snapshot_fingerprint": rule_snapshot.fingerprint,
+            "effective_transition_rule_ids": rule_snapshot.effective_rule_ids,
+            "selected_transition_rule_ids": (),
+        },
     )
 
 
@@ -1343,6 +1393,7 @@ def _attach_runtime_timings(solution, timings, started):
 def solve(instance, parameters=None):
     """Solve phase 3C without accessing Django ORM objects."""
 
+    rule_snapshot = transition_rule_snapshot(instance)
     parameters = replace(
         parameters or SolverParameters(),
         furnace_mode="sequence_dependent_transitions",
@@ -1398,7 +1449,11 @@ def solve(instance, parameters=None):
             last_successful_stage=reference.last_successful_stage,
         )
     reference_metrics = cpsat._metrics(reference)
-    reference_valid = _reference_valid_under_phase3c(instance, reference)
+    reference_valid = _reference_valid_under_phase3c(
+        instance,
+        reference,
+        rule_snapshot,
+    )
     grouping_reference = reference
     grouping_source = "phase3b_reference"
     if reference.solution_mode == "phase3a_fallback" or len(
@@ -1438,6 +1493,10 @@ def solve(instance, parameters=None):
         ),
         "reference_solve_seconds": round(timings["phase3b_reference"], 6),
         "preaggregation_seconds": round(timings["preaggregation"], 6),
+        "furnace_load_count_source": _furnace_load_count_source(
+            {"grouping_source": grouping_source}
+        ),
+        "furnace_load_count_optimized": False,
     }
 
     remaining = solve_budget - (perf_counter() - started)
@@ -1467,6 +1526,7 @@ def solve(instance, parameters=None):
             instance,
             grouping_reference,
             fixed_reference_sequence=True,
+            rule_snapshot=rule_snapshot,
         )
     except (ModelBuildError, StopIteration) as exc:
         seed_build_error = str(exc)
@@ -1503,6 +1563,7 @@ def solve(instance, parameters=None):
                     instance,
                     parameters,
                     _snapshot(instance, seed_artifacts, seed_solver),
+                    seed_artifacts.transition_rule_snapshot,
                     (seed_stage,),
                     started,
                     reference_metrics,
@@ -1567,6 +1628,7 @@ def solve(instance, parameters=None):
             instance,
             seed_candidate or grouping_reference,
             fixed_reference_sequence=False,
+            rule_snapshot=rule_snapshot,
         )
     except (ModelBuildError, StopIteration) as exc:
         return _empty_solution(
@@ -1591,10 +1653,10 @@ def solve(instance, parameters=None):
         () if seed_candidate is not None else (("feasibility", None, 0.65),)
     ) + (
         ("weighted_tardiness", artifacts.weighted_tardiness, 0.40),
-        ("furnace_load_count", artifacts.load_count, 0.12),
         ("transition_minutes", artifacts.transition_minutes, 0.28),
         ("makespan", artifacts.makespan, 1.0),
     )
+    planned_stage_count = len(stages) + len(objectives)
     for name, objective, fraction in objectives:
         remaining = solve_budget - (perf_counter() - started)
         if remaining <= 0.01:
@@ -1613,6 +1675,7 @@ def solve(instance, parameters=None):
             instance,
             parameters,
             _snapshot(instance, artifacts, solver),
+            artifacts.transition_rule_snapshot,
             stages,
             started,
             reference_metrics,
@@ -1691,7 +1754,10 @@ def solve(instance, parameters=None):
         )
 
     candidate = validated_candidates[-1]
-    incomplete = len(stages) < 5 or stages[-1].status not in ("FEASIBLE", "OPTIMAL")
+    incomplete = len(stages) < planned_stage_count or stages[-1].status not in (
+        "FEASIBLE",
+        "OPTIMAL",
+    )
     if incomplete:
         return _attach_runtime_timings(
             replace(

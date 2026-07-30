@@ -14,7 +14,7 @@ from .constraints import (
     material_ready_minute,
     schedulable_steps,
 )
-from .transition_rules import resolve_transition_rule
+from .transition_rules import resolve_transition_rule, transition_rule_snapshot
 
 
 @dataclass(frozen=True)
@@ -366,6 +366,29 @@ class SchedulingSolutionValidator:
             solution.solution_mode == "phase3c_transition"
             or solution.furnace_transitions
         ):
+            rule_snapshot = transition_rule_snapshot(instance)
+            if (
+                solution.phase3c_metrics.get("transition_rule_resolution_mode")
+                != rule_snapshot.resolution_mode
+                or solution.phase3c_metrics.get("transition_rule_snapshot_at")
+                != rule_snapshot.snapshot_at
+                or solution.phase3c_metrics.get(
+                    "transition_rule_snapshot_fingerprint"
+                )
+                != rule_snapshot.fingerprint
+                or tuple(
+                    solution.phase3c_metrics.get(
+                        "effective_transition_rule_ids",
+                        (),
+                    )
+                )
+                != rule_snapshot.effective_rule_ids
+            ):
+                add(
+                    "MLCC-SV047",
+                    "transition_rule_snapshot",
+                    "Solution transition-rule snapshot differs from the planning origin.",
+                )
             programs = {item.id: item for item in instance.furnace_programs}
             states = {
                 item.resource_id: item for item in instance.furnace_state_snapshots
@@ -521,12 +544,27 @@ class SchedulingSolutionValidator:
                         "Furnace transition fields, direction, state or duration are invalid.",
                     )
                 elif successor:
+                    evidence = transition.resolution_evidence
+                    if (
+                        evidence.get("transition_rule_resolution_mode")
+                        != rule_snapshot.resolution_mode
+                        or evidence.get("transition_rule_snapshot_at")
+                        != rule_snapshot.snapshot_at
+                        or evidence.get("transition_rule_snapshot_fingerprint")
+                        != rule_snapshot.fingerprint
+                    ):
+                        add(
+                            "MLCC-SV047",
+                            transition.transition_id,
+                            "Transition evidence uses a different rule snapshot.",
+                        )
                     resolution = resolve_transition_rule(
                         instance,
                         transition.equipment_id,
                         successor.operation_type,
                         from_state,
                         successor.furnace_program_id,
+                        rule_snapshot,
                     )
                     if (
                         resolution.conflict

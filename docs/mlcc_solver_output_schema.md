@@ -14,12 +14,12 @@
 | `furnace_loads` | 明确炉次、成员、炉程及相邻炉次 |
 | `furnace_transitions` | 初始状态或前一炉次到下一炉次的显式转换 |
 | `orders` | 订单完工、延期、优先级权重 |
-| `objective_stages` | 可行、延期、炉次数、转换分钟、总完工时间五层目标 |
+| `objective_stages` | 可行、延期、转换分钟、总完工时间四层目标；炉次数不属于 C 级优化目标 |
 | `solution_mode` | `phase3b_multi_batch`、`phase3a_fallback` 或 `phase3c_transition` |
 | `fallback_reason` | 仅安全回退/中间可行快照返回时填写 |
 | `last_successful_stage` | 最后成功的分层目标 |
 | `phase3b_reference_metrics` | B 原始参考指标、回退来源、C 级有效性、实际用于 C 建模的分组来源及 B/预分炉耗时 |
-| `phase3c_metrics` | C 级真实转换约束下的指标及模型构建、validator 等分项耗时 |
+| `phase3c_metrics` | C 级指标、炉次数来源/非优化标记、规则快照元数据及模型构建、validator 等分项耗时 |
 | `transition_constraint_cost` | 总转换分钟和来源规则成本；成本仅报告，不进入综合目标 |
 | `metric_deltas` | C 相对 B 参考的延期、炉次数、完工时间和新增转换分钟 |
 
@@ -49,7 +49,7 @@
 - `transition_type`；
 - `start_minute`、`end_minute`、`duration_minutes`；
 - `frozen`、`status=proposed`；
-- `resolution_evidence`，记录作用域、优先级、规则 ID 和缺失规则默认禁止语义。
+- `resolution_evidence`，记录作用域、优先级、规则 ID、缺失规则默认禁止语义，以及 `planning_origin_snapshot` 模式、快照时刻和规则指纹。
 
 每台有炉次的设备恰有一条从初始状态进入首炉的转换。其他转换只表示相邻炉次，不为同一炉次中的成员创建内部转换。
 
@@ -64,3 +64,7 @@
 ## 确定性
 
 数组按稳定业务 ID 排序，字典键排序，`Decimal` 写为十进制字符串。运行耗时和最优界是运行元数据；输入指纹、版本、求解参数、任务、炉次、转换和规则证据可完整追溯。
+
+`phase3c_metrics.furnace_load_count` 是报告指标，不是目标值。其来源由 `furnace_load_count_source=phase3b_inherited|deterministic_pregrouped` 标识，`furnace_load_count_optimized` 固定为 `false`。为兼容既有 v2 消费者，`objective_values.furnace_load_count` 暂保留为只读报告值。
+
+规则快照元数据包括 `transition_rule_resolution_mode`、`transition_rule_snapshot_at`、`transition_rule_snapshot_fingerprint`、`effective_transition_rule_ids` 和 `selected_transition_rule_ids`。同一 PlanningInstance 的这些字段稳定不变；跨日期动态规则弧尚未实现。

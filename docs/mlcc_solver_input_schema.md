@@ -18,6 +18,7 @@ frePPLe/MLCC 数据库 → PlanningInstanceExtractor → PlanningInstance
 - 所有业务对象 ID 使用带类型前缀的稳定字符串，例如 `batch:MLCC-P2-V-0001`、`task:MLCC-P2-V-MO-0001-1`。
 - 数量、批量和容量在内存中使用 `Decimal`，JSON 中编码为十进制字符串；禁止转换为二进制浮点数。
 - `window.origin` 是带 UTC 偏移的 ISO 8601 时间。其他业务时间统一为相对该起点的整数分钟。
+- 转换规则采用 `planning_origin_snapshot`：`window.origin` 同时是规则主数据快照时刻。单次求解跨越规则生效日期时不切换规则；规则变化后必须重新提取并求解。
 - 数据库时间继续遵循 frePPLe 的工厂本地时间配置；提取时附加 `factory_timezone`，不改变核心表的时间字段。
 - 元组和列表由提取器按稳定 ID 排序，字典键按名称排序。相同数据库快照和参数产生相同业务 JSON 与指纹。
 - 炉状态、转换规则和冻结转换的 ID 由业务字段计算 SHA-256，不包含数据库自增主键。
@@ -83,6 +84,8 @@ frePPLe/MLCC 数据库 → PlanningInstanceExtractor → PlanningInstance
 `FurnaceProgram` 包含稳定业务 ID、炉程键、版本、工序、气氛、所需前状态、执行后状态、生效期和启用状态。`FurnaceStateSnapshot` 记录设备观察时间、状态、当前炉程和最早可用分钟；提取器只选择排产起点前最新记录。
 
 `FurnaceTransitionRule` 包含设备/设备组/全局作用域、来源状态、目标炉程、转换类型、整数分钟、成本、允许标志、优先级和生效期。解析顺序严格为精确设备 > 设备组 > 全局，同级同优先级多条规则视为冲突，缺少规则默认禁止。相同炉程连续运行也必须有显式自转换规则。
+
+resolver、预检、CP-SAT 模型和独立 solution validator 都从 `window.origin` 构造同一个不可变规则快照。有效规则稳定 ID 的有序集合参与快照 SHA-256；不使用系统当前时间。当前版本不生成排程周期中途切换规则的时间相关弧。
 
 ### CompatibilityRule 与 SetupRule
 

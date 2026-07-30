@@ -11,6 +11,7 @@ SCOPE_RANK = {
     "equipment_group": 2,
     "resource": 3,
 }
+TRANSITION_RULE_RESOLUTION_MODE = "planning_origin_snapshot"
 
 
 def _business_id(kind, values):
@@ -81,6 +82,15 @@ class TransitionResolution:
         return bool(self.rule is not None and self.rule.allowed and not self.conflict)
 
 
+@dataclass(frozen=True)
+class TransitionRuleSnapshot:
+    resolution_mode: str
+    snapshot_at: str
+    snapshot_date: date
+    effective_rule_ids: tuple[str, ...]
+    fingerprint: str
+
+
 def rule_is_effective(rule, on_date):
     try:
         effective = date.fromisoformat(rule.effective_date)
@@ -92,16 +102,50 @@ def rule_is_effective(rule, on_date):
     )
 
 
+def transition_rule_snapshot(instance):
+    """Freeze transition master data at the planning-window origin."""
+
+    snapshot_at = str(instance.window.origin)
+    snapshot_date = date.fromisoformat(snapshot_at[:10])
+    effective_rule_ids = tuple(
+        sorted(
+            rule.id
+            for rule in instance.furnace_transition_rules
+            if rule_is_effective(rule, snapshot_date)
+        )
+    )
+    payload = "\x1f".join(
+        (
+            TRANSITION_RULE_RESOLUTION_MODE,
+            snapshot_at,
+            *effective_rule_ids,
+        )
+    )
+    return TransitionRuleSnapshot(
+        resolution_mode=TRANSITION_RULE_RESOLUTION_MODE,
+        snapshot_at=snapshot_at,
+        snapshot_date=snapshot_date,
+        effective_rule_ids=effective_rule_ids,
+        fingerprint=hashlib.sha256(payload.encode("utf-8")).hexdigest(),
+    )
+
+
 def resolve_transition_rule(
     instance,
     resource_id,
     stage,
     from_state_key,
     to_program_id,
+    snapshot=None,
 ):
-    """Resolve exact-resource > equipment-group > global, then lowest priority."""
+    """Resolve one rule from the planning-origin snapshot.
 
-    origin_date = date.fromisoformat(instance.window.origin[:10])
+    Scope precedence is exact resource, equipment group and global, followed by
+    the lowest numeric priority. The snapshot stays fixed for the complete solve.
+    """
+
+    snapshot = snapshot or transition_rule_snapshot(instance)
+    origin_date = snapshot.snapshot_date
     resource = next(
         (item for item in instance.equipment if item.id == resource_id),
         None,

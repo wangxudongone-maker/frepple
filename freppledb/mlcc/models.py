@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import date, timedelta
 from decimal import Decimal
 
 from django.core.exceptions import ValidationError
@@ -30,6 +30,76 @@ class ValidatedAuditModel(AuditModel):
         abstract = True
 
 
+class MlccFurnaceProgram(ValidatedAuditModel):
+    """A versioned executable furnace program with explicit state semantics."""
+
+    id = models.CharField(
+        _("stable business identifier"),
+        primary_key=True,
+        max_length=200,
+    )
+    program_key = models.CharField(
+        _("furnace program key"), max_length=100, db_index=True
+    )
+    version = models.CharField(_("version"), max_length=40)
+    process_stage = models.CharField(
+        _("process stage"), max_length=30, choices=PROCESS_STAGES
+    )
+    atmosphere_key = models.CharField(_("atmosphere key"), max_length=100)
+    required_pre_state_key = models.CharField(
+        _("required pre-state key"), max_length=100
+    )
+    resulting_post_state_key = models.CharField(
+        _("resulting post-state key"), max_length=100
+    )
+    effective_date = models.DateField(_("effective date"))
+    expiry_date = models.DateField(_("expiry date"), null=True, blank=True)
+    active = models.BooleanField(_("active"), default=True)
+
+    def __str__(self):
+        return f"{self.program_key} {self.version}"
+
+    def clean(self):
+        errors = {}
+        for field_name in (
+            "id",
+            "program_key",
+            "version",
+            "atmosphere_key",
+            "required_pre_state_key",
+            "resulting_post_state_key",
+        ):
+            value = (getattr(self, field_name, None) or "").strip()
+            if not value:
+                errors[field_name] = _("This value is required.")
+            else:
+                setattr(self, field_name, value)
+        if self.process_stage not in ("debinding", "sintering"):
+            errors["process_stage"] = _(
+                "A furnace program is only valid for debinding or sintering."
+            )
+        if (
+            self.expiry_date
+            and self.effective_date
+            and self.expiry_date < self.effective_date
+        ):
+            errors["expiry_date"] = _("Expiry date cannot precede effective date.")
+        if errors:
+            raise ValidationError(errors)
+
+    class Meta(AuditModel.Meta):
+        db_table = "mlcc_furnace_program"
+        ordering = ("process_stage", "program_key", "version")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("program_key", "version"),
+                name="mlcc_furnace_program_key_version_uniq",
+            )
+        ]
+        verbose_name = _("MLCC furnace program")
+        verbose_name_plural = _("MLCC furnace programs")
+
+
 class MlccRecipe(ValidatedAuditModel):
     id = models.AutoField(_("identifier"), primary_key=True)
     name = models.CharField(_("recipe"), max_length=100, db_index=True)
@@ -59,6 +129,14 @@ class MlccRecipe(ValidatedAuditModel):
     furnace_program_key = models.CharField(
         _("furnace program key"), max_length=100, null=True, blank=True, db_index=True
     )
+    furnace_program = models.ForeignKey(
+        MlccFurnaceProgram,
+        verbose_name=_("furnace program"),
+        related_name="recipes",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+    )
     compatibility_group = models.CharField(
         _("certified compatibility group"),
         max_length=100,
@@ -83,6 +161,18 @@ class MlccRecipe(ValidatedAuditModel):
             and self.expiry_date < self.effective_date
         ):
             errors["expiry_date"] = _("Expiry date cannot precede effective date.")
+        if self.furnace_program_id:
+            if self.furnace_program.process_stage != self.process_stage:
+                errors["furnace_program"] = _(
+                    "Recipe and furnace program must use the same process stage."
+                )
+            legacy_key = (self.furnace_program_key or "").strip()
+            if legacy_key and legacy_key != self.furnace_program.program_key:
+                errors["furnace_program_key"] = _(
+                    "Legacy furnace program key must match the linked program."
+                )
+            elif not legacy_key:
+                self.furnace_program_key = self.furnace_program.program_key
         if errors:
             raise ValidationError(errors)
 
@@ -427,6 +517,204 @@ class MlccBatchGenealogy(ValidatedAuditModel):
         verbose_name_plural = _("MLCC batch genealogies")
 
 
+class MlccFurnaceStateSnapshot(ValidatedAuditModel):
+    id = models.AutoField(_("identifier"), primary_key=True)
+    resource = models.ForeignKey(
+        "input.Resource",
+        verbose_name=_("resource"),
+        related_name="mlcc_furnace_state_snapshots",
+        on_delete=models.CASCADE,
+    )
+    observed_at = models.DateTimeField(_("observed at"), db_index=True)
+    state_key = models.CharField(_("state key"), max_length=100)
+    current_program = models.ForeignKey(
+        MlccFurnaceProgram,
+        verbose_name=_("current furnace program"),
+        related_name="state_snapshots",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+    )
+    available_at = models.DateTimeField(_("available at"))
+
+    def __str__(self):
+        return f"{self.resource_id} @ {self.observed_at}: {self.state_key}"
+
+    def clean(self):
+        self.state_key = (self.state_key or "").strip()
+        if not self.state_key:
+            raise ValidationError({"state_key": _("A furnace state key is required.")})
+        if (
+            self.available_at
+            and self.observed_at
+            and self.available_at < self.observed_at
+        ):
+            raise ValidationError(
+                {"available_at": _("Available time cannot precede observation time.")}
+            )
+
+    class Meta(AuditModel.Meta):
+        db_table = "mlcc_furnace_state_snapshot"
+        ordering = ("resource", "-observed_at", "id")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("resource", "observed_at"),
+                name="mlcc_furnace_state_resource_time_uniq",
+            )
+        ]
+        verbose_name = _("MLCC furnace state snapshot")
+        verbose_name_plural = _("MLCC furnace state snapshots")
+
+
+class MlccFurnaceTransitionRule(ValidatedAuditModel):
+    TRANSITION_TYPES = (
+        ("none", _("none")),
+        ("cleaning", _("cleaning")),
+        ("atmosphere_purge", _("atmosphere purge")),
+        ("empty_run", _("empty run")),
+        ("heating", _("heating")),
+        ("cooling", _("cooling")),
+        ("composite", _("composite")),
+    )
+
+    id = models.AutoField(_("identifier"), primary_key=True)
+    resource = models.ForeignKey(
+        "input.Resource",
+        verbose_name=_("resource"),
+        related_name="mlcc_furnace_transition_rules",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+    )
+    equipment_group = models.CharField(
+        _("equipment group"), max_length=100, null=True, blank=True, db_index=True
+    )
+    process_stage = models.CharField(
+        _("process stage"), max_length=30, choices=PROCESS_STAGES
+    )
+    from_state_key = models.CharField(_("from state key"), max_length=100)
+    to_program = models.ForeignKey(
+        MlccFurnaceProgram,
+        verbose_name=_("target furnace program"),
+        related_name="transition_rules",
+        on_delete=models.CASCADE,
+    )
+    transition_type = models.CharField(
+        _("transition type"),
+        max_length=30,
+        choices=TRANSITION_TYPES,
+        default="none",
+    )
+    duration = models.DurationField(_("duration"), default=timedelta(0))
+    setup_cost = models.DecimalField(
+        _("setup cost"),
+        max_digits=20,
+        decimal_places=8,
+        default=Decimal("0"),
+    )
+    allowed = models.BooleanField(_("allowed"), default=True)
+    enabled = models.BooleanField(_("enabled"), default=True)
+    priority = models.IntegerField(_("priority"), default=0)
+    effective_date = models.DateField(_("effective date"))
+    expiry_date = models.DateField(_("expiry date"), null=True, blank=True)
+
+    def __str__(self):
+        scope = self.resource_id or self.equipment_group or "*"
+        return f"{scope}: {self.from_state_key} -> {self.to_program_id}"
+
+    @property
+    def scope_level(self):
+        if self.resource_id:
+            return "resource"
+        if self.equipment_group:
+            return "equipment_group"
+        return "global"
+
+    def clean(self):
+        errors = {}
+        self.from_state_key = (self.from_state_key or "").strip()
+        self.equipment_group = (self.equipment_group or "").strip() or None
+        if not self.from_state_key:
+            errors["from_state_key"] = _("A source furnace state is required.")
+        if self.resource_id and self.equipment_group:
+            errors["equipment_group"] = _(
+                "A transition rule can target a resource or an equipment group, not both."
+            )
+        if self.process_stage not in ("debinding", "sintering"):
+            errors["process_stage"] = _(
+                "A furnace transition is only valid for debinding or sintering."
+            )
+        if self.to_program_id and self.to_program.process_stage != self.process_stage:
+            errors["to_program"] = _(
+                "Transition rule and target program must use the same process stage."
+            )
+        if self.duration is None or self.duration < timedelta(0):
+            errors["duration"] = _("Transition duration cannot be negative.")
+        if self.setup_cost is None or self.setup_cost < 0:
+            errors["setup_cost"] = _("Setup cost cannot be negative.")
+        if (
+            self.expiry_date
+            and self.effective_date
+            and self.expiry_date < self.effective_date
+        ):
+            errors["expiry_date"] = _("Expiry date cannot precede effective date.")
+        if errors:
+            raise ValidationError(errors)
+
+        database = self._state.db or DEFAULT_DB_ALIAS
+        end_date = self.expiry_date or date.max
+        duplicate = (
+            self.__class__.objects.using(database)
+            .filter(
+                resource_id=self.resource_id,
+                equipment_group=self.equipment_group,
+                process_stage=self.process_stage,
+                from_state_key=self.from_state_key,
+                to_program_id=self.to_program_id,
+                enabled=True,
+                priority=self.priority,
+                effective_date__lte=end_date,
+            )
+            .filter(
+                Q(expiry_date__isnull=True) | Q(expiry_date__gte=self.effective_date)
+            )
+        )
+        if self.pk:
+            duplicate = duplicate.exclude(pk=self.pk)
+        if self.enabled and duplicate.exists():
+            raise ValidationError(
+                _("An overlapping transition rule exists at the same scope.")
+            )
+
+    class Meta(AuditModel.Meta):
+        db_table = "mlcc_furnace_transition_rule"
+        ordering = (
+            "process_stage",
+            "resource",
+            "equipment_group",
+            "from_state_key",
+            "to_program",
+            "priority",
+            "id",
+        )
+        constraints = [
+            models.CheckConstraint(
+                check=Q(duration__gte=timedelta(0)),
+                name="mlcc_transition_rule_duration_nonnegative",
+            ),
+            models.CheckConstraint(
+                check=Q(setup_cost__gte=0),
+                name="mlcc_transition_rule_cost_nonnegative",
+            ),
+            models.CheckConstraint(
+                check=~(Q(resource__isnull=False) & Q(equipment_group__isnull=False)),
+                name="mlcc_transition_rule_single_scope",
+            ),
+        ]
+        verbose_name = _("MLCC furnace transition rule")
+        verbose_name_plural = _("MLCC furnace transition rules")
+
+
 class MlccFurnaceLoad(ValidatedAuditModel):
     STATUSES = (
         ("draft", _("draft")),
@@ -448,6 +736,14 @@ class MlccFurnaceLoad(ValidatedAuditModel):
     recipe = models.ForeignKey(
         MlccRecipe,
         verbose_name=_("recipe"),
+        related_name="furnace_loads",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+    )
+    furnace_program = models.ForeignKey(
+        MlccFurnaceProgram,
+        verbose_name=_("furnace program"),
         related_name="furnace_loads",
         null=True,
         blank=True,
@@ -515,6 +811,36 @@ class MlccFurnaceLoad(ValidatedAuditModel):
         if self.status == "proposed" and not self.run_id:
             raise ValidationError(
                 {"run": _("A proposed furnace load must belong to a schedule run.")}
+            )
+        if self.furnace_program_id:
+            if self.furnace_program.process_stage != self.operation_type:
+                raise ValidationError(
+                    {
+                        "furnace_program": _(
+                            "Furnace load and program must use the same process stage."
+                        )
+                    }
+                )
+            if (
+                self.furnace_program_key
+                and self.furnace_program_key != self.furnace_program.program_key
+            ):
+                raise ValidationError(
+                    {
+                        "furnace_program_key": _(
+                            "Legacy furnace program key must match the linked program."
+                        )
+                    }
+                )
+            if not self.furnace_program_key:
+                self.furnace_program_key = self.furnace_program.program_key
+        if (
+            self.recipe_id
+            and self.furnace_program_id
+            and self.recipe.furnace_program_id != self.furnace_program_id
+        ):
+            raise ValidationError(
+                {"recipe": _("Furnace load recipe must map to its furnace program.")}
             )
 
     class Meta(AuditModel.Meta):
@@ -742,6 +1068,119 @@ class MlccScheduleRun(ValidatedAuditModel):
         ordering = ("-requested_at", "name")
         verbose_name = _("MLCC schedule run")
         verbose_name_plural = _("MLCC schedule runs")
+
+
+class MlccFurnaceTransition(ValidatedAuditModel):
+    STATUSES = (("proposed", _("proposed")),)
+
+    id = models.AutoField(_("identifier"), primary_key=True)
+    run = models.ForeignKey(
+        MlccScheduleRun,
+        verbose_name=_("schedule run"),
+        related_name="furnace_transitions",
+        on_delete=models.CASCADE,
+    )
+    resource = models.ForeignKey(
+        "input.Resource",
+        verbose_name=_("resource"),
+        related_name="mlcc_furnace_transitions",
+        on_delete=models.PROTECT,
+    )
+    predecessor_load = models.ForeignKey(
+        MlccFurnaceLoad,
+        verbose_name=_("predecessor furnace load"),
+        related_name="outgoing_transitions",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+    )
+    successor_load = models.ForeignKey(
+        MlccFurnaceLoad,
+        verbose_name=_("successor furnace load"),
+        related_name="incoming_transitions",
+        on_delete=models.CASCADE,
+    )
+    transition_rule = models.ForeignKey(
+        MlccFurnaceTransitionRule,
+        verbose_name=_("transition rule"),
+        related_name="planned_transitions",
+        on_delete=models.PROTECT,
+    )
+    transition_type = models.CharField(
+        _("transition type"),
+        max_length=30,
+        choices=MlccFurnaceTransitionRule.TRANSITION_TYPES,
+    )
+    planned_start = models.DateTimeField(_("planned start"))
+    planned_end = models.DateTimeField(_("planned end"))
+    status = models.CharField(
+        _("status"), max_length=15, choices=STATUSES, default="proposed"
+    )
+    details = models.JSONField(_("details"), default=dict, blank=True)
+
+    def __str__(self):
+        predecessor = self.predecessor_load_id or "initial"
+        return f"{predecessor} -> {self.successor_load_id}"
+
+    def clean(self):
+        errors = {}
+        if self.status != "proposed":
+            errors["status"] = _("Furnace transition status must remain proposed.")
+        if (
+            self.planned_start
+            and self.planned_end
+            and self.planned_end < self.planned_start
+        ):
+            errors["planned_end"] = _("Transition end cannot precede transition start.")
+        if self.successor_load_id:
+            if self.successor_load.resource_id != self.resource_id:
+                errors["successor_load"] = _(
+                    "Successor load must use the transition resource."
+                )
+            if (
+                self.successor_load.status == "proposed"
+                and self.successor_load.run_id != self.run_id
+            ):
+                errors["successor_load"] = _(
+                    "Successor load and transition must belong to the same run."
+                )
+        if (
+            self.predecessor_load_id
+            and self.predecessor_load.resource_id != self.resource_id
+        ):
+            errors["predecessor_load"] = _(
+                "Predecessor load must use the transition resource."
+            )
+        if self.transition_rule_id:
+            if self.transition_rule.transition_type != self.transition_type:
+                errors["transition_type"] = _(
+                    "Transition type must match the resolved rule."
+                )
+            if (
+                self.transition_rule.resource_id
+                and self.transition_rule.resource_id != self.resource_id
+            ):
+                errors["transition_rule"] = _(
+                    "Resource-specific rule does not match the transition resource."
+                )
+        if errors:
+            raise ValidationError(errors)
+
+    class Meta(AuditModel.Meta):
+        db_table = "mlcc_furnace_transition"
+        ordering = ("resource", "planned_start", "id")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("run", "successor_load"),
+                name="mlcc_furnace_transition_successor_uniq",
+            ),
+            models.CheckConstraint(
+                check=Q(status="proposed"),
+                name="mlcc_furnace_transition_proposed",
+            ),
+        ]
+        verbose_name = _("MLCC furnace transition")
+        verbose_name_plural = _("MLCC furnace transitions")
 
 
 class MlccScheduleResult(ValidatedAuditModel):

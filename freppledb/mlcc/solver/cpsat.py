@@ -633,6 +633,7 @@ def _conversion_trace(step, resource_id):
 def _snapshot(instance, artifacts, solver):
     steps = {item.id: item for item in artifacts.steps}
     recipes = {item.id: item for item in instance.recipes}
+    programs = {item.id: item for item in instance.furnace_programs}
     batches = {item.id: item for item in instance.batches}
     task_load = {}
     furnace_loads = []
@@ -672,14 +673,25 @@ def _snapshot(instance, artifacts, solver):
                 pair = _pair_evidence(instance, steps[task_id], steps[other_id])
                 values.append(f"{batches[steps[other_id].batch_id].id}:{pair}")
             evidence[steps[task_id].batch_id] = tuple(sorted(values))
-        recipe = recipes[load.recipe_id]
+        member_recipe_ids = tuple(
+            sorted({steps[item].recipe_id for item in member_task_ids})
+        )
+        recipe_id = member_recipe_ids[0] if len(member_recipe_ids) == 1 else None
+        recipe = recipes[recipe_id] if recipe_id else None
+        member_program_ids = {
+            recipes[item].furnace_program_id for item in member_recipe_ids
+        }
+        program_id = (
+            next(iter(member_program_ids)) if len(member_program_ids) == 1 else None
+        )
+        program = programs.get(program_id)
         furnace_loads.append(
             FurnaceLoadAssignment(
                 load_id=load.load_id,
                 operation_type=load.stage,
                 equipment_id=resource_id,
-                recipe_id=load.recipe_id,
-                recipe_version=recipe.version,
+                recipe_id=recipe_id,
+                recipe_version=recipe.version if recipe else None,
                 furnace_program_key=load.program_key,
                 start_minute=solver.Value(load.start),
                 end_minute=solver.Value(load.end),
@@ -701,6 +713,9 @@ def _snapshot(instance, artifacts, solver):
                     "capacity_feasible": loaded <= capacity,
                     "synchronized": True,
                 },
+                furnace_program_id=program_id,
+                furnace_program_version=program.version if program else None,
+                member_recipe_ids=member_recipe_ids,
             )
         )
     assignments = []
@@ -772,6 +787,7 @@ def _metrics(solution):
 
 def _baseline_with_loads(instance, solution, parameters):
     recipes = {item.id: item for item in instance.recipes}
+    programs = {item.id: item for item in instance.furnace_programs}
     steps = {item.id: item for item in instance.steps}
     loads = []
     assignments = []
@@ -798,6 +814,7 @@ def _baseline_with_loads(instance, solution, parameters):
             item for item in instance.equipment if item.id == assignment.resource_id
         )
         recipe = recipes[step.recipe_id]
+        program = programs.get(recipe.furnace_program_id)
         load_id = f"phase3a:{assignment.task_id}"
         assignments.append(replace(assignment, furnace_load_id=load_id))
         loads.append(
@@ -819,11 +836,15 @@ def _baseline_with_loads(instance, solution, parameters):
                 {assignment.batch_id: ()},
                 {assignment.batch_id: _conversion_trace(step, assignment.resource_id)},
                 assignment.frozen,
+                furnace_program_id=recipe.furnace_program_id,
+                furnace_program_version=program.version if program else None,
+                member_recipe_ids=(recipe.id,),
             )
         )
     for frozen in instance.frozen_furnace_loads:
         member_steps = [steps[item] for item in frozen.member_task_ids]
         recipe = recipes[frozen.recipe_id]
+        program = programs.get(frozen.furnace_program_id or recipe.furnace_program_id)
         evidence = {}
         for step in member_steps:
             evidence[step.batch_id] = tuple(
@@ -856,6 +877,11 @@ def _baseline_with_loads(instance, solution, parameters):
                 },
                 True,
                 frozen.status,
+                furnace_program_id=(
+                    frozen.furnace_program_id or recipe.furnace_program_id
+                ),
+                furnace_program_version=program.version if program else None,
+                member_recipe_ids=(recipe.id,),
             )
         )
     baseline = replace(
@@ -1010,7 +1036,8 @@ def solve(instance, parameters=None):
             started,
             "Phase-3A fallback failed independent validation: "
             + "; ".join(
-                f"{item.code}:{item.object_id}" for item in fallback_validation.violations
+                f"{item.code}:{item.object_id}"
+                for item in fallback_validation.violations
             ),
             baseline_metrics,
             baseline_raw.last_successful_stage,

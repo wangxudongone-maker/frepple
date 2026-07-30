@@ -9,6 +9,7 @@ from decimal import Decimal
 
 from .reasons import PrecheckIssue, issue
 from .schema import PROCESS_STAGE_ORDER, PlanningInstance
+from .transition_rules import resolve_transition_rule, rule_is_effective
 
 
 @dataclass(frozen=True)
@@ -51,12 +52,17 @@ class PlanningInstanceValidator:
         self._validate_standard_times()
         self._validate_resources_and_capabilities()
         self._validate_recipes()
+        self._validate_furnace_programs()
+        self._validate_initial_furnace_states()
+        self._validate_transition_rules()
+        self._validate_transition_reachability()
         self._validate_furnaces_and_batches()
         self._validate_compatibility()
         self._validate_dependencies()
         self._validate_quality_holds()
         self._validate_frozen_tasks()
         self._validate_frozen_furnace_loads()
+        self._validate_frozen_furnace_transitions()
         self._validate_materials()
         self._validate_quantities()
         self._validate_waiting_times()
@@ -175,6 +181,210 @@ class PlanningInstanceValidator:
                 or (expiry is not None and expiry < origin_date)
             ):
                 self._add("INVALID_RECIPE", "recipe", recipe.id)
+
+    def _validate_furnace_programs(self):
+        programs = {item.id: item for item in self.instance.furnace_programs}
+        origin_date = date.fromisoformat(self.instance.window.origin[:10])
+        identities = defaultdict(list)
+        for program in self.instance.furnace_programs:
+            identities[(program.program_key, program.version)].append(program.id)
+        for ids in identities.values():
+            if len(ids) > 1:
+                self._add(
+                    "FURNACE_PROGRAM_MAPPING_INVALID",
+                    "furnace_program",
+                    ",".join(sorted(ids)),
+                    "炉程业务键和版本重复。",
+                )
+
+        recipes = {item.id: item for item in self.instance.recipes}
+        for step in self.instance.steps:
+            if step.stage not in ("debinding", "sintering") or not step.recipe_id:
+                continue
+            recipe = recipes.get(step.recipe_id)
+            program = programs.get(recipe.furnace_program_id) if recipe else None
+            invalid = (
+                recipe is None
+                or not recipe.furnace_program_id
+                or program is None
+                or program.stage != step.stage
+                or recipe.stage != program.stage
+                or recipe.furnace_program_key != program.program_key
+            )
+            if program:
+                try:
+                    effective = date.fromisoformat(program.effective_date)
+                    expiry = (
+                        date.fromisoformat(program.expiry_date)
+                        if program.expiry_date
+                        else None
+                    )
+                except (TypeError, ValueError):
+                    invalid = True
+                else:
+                    invalid = invalid or (
+                        not program.active
+                        or effective > origin_date
+                        or (expiry is not None and expiry < origin_date)
+                    )
+            if invalid:
+                self._add(
+                    "FURNACE_PROGRAM_MAPPING_INVALID",
+                    "task",
+                    step.id,
+                )
+
+    def _furnace_resource_ids(self):
+        return {
+            resource_id
+            for step in self.instance.steps
+            if step.stage in ("debinding", "sintering")
+            for resource_id in step.certified_resource_ids
+        }
+
+    def _validate_initial_furnace_states(self):
+        snapshots = defaultdict(list)
+        for state in self.instance.furnace_state_snapshots:
+            snapshots[state.resource_id].append(state)
+        for resource_id in sorted(self._furnace_resource_ids()):
+            candidates = snapshots.get(resource_id, ())
+            valid = [
+                state
+                for state in candidates
+                if state.observed_minute <= 0
+                and state.available_minute >= state.observed_minute
+                and (state.state_key or "").strip()
+            ]
+            if len(valid) != 1:
+                self._add(
+                    "INITIAL_FURNACE_STATE_INVALID",
+                    "resource",
+                    resource_id,
+                    ("同一排产起点存在多个最新状态。" if len(valid) > 1 else None),
+                )
+
+    def _validate_transition_rules(self):
+        programs = {item.id: item for item in self.instance.furnace_programs}
+        equipment = {item.id: item for item in self.instance.equipment}
+        origin_date = date.fromisoformat(self.instance.window.origin[:10])
+        active_by_resolution_key = defaultdict(list)
+        for rule in self.instance.furnace_transition_rules:
+            invalid = (
+                rule.duration_minutes < 0
+                or rule.setup_cost < 0
+                or rule.scope_level not in ("resource", "equipment_group", "global")
+                or (rule.resource_id and rule.equipment_group)
+                or (rule.resource_id and rule.resource_id not in equipment)
+            )
+            program = programs.get(rule.to_program_id)
+            invalid = (
+                invalid
+                or program is None
+                or (program is not None and program.stage != rule.stage)
+            )
+            if rule.enabled and not rule_is_effective(rule, origin_date):
+                try:
+                    effective = date.fromisoformat(rule.effective_date)
+                    expiry = (
+                        date.fromisoformat(rule.expiry_date)
+                        if rule.expiry_date
+                        else None
+                    )
+                    invalid = invalid or (expiry is not None and expiry < effective)
+                except (TypeError, ValueError):
+                    invalid = True
+            if invalid:
+                self._add(
+                    "TRANSITION_RULE_INVALID",
+                    "furnace_transition_rule",
+                    rule.id,
+                )
+            if rule_is_effective(rule, origin_date):
+                scope = (
+                    f"resource:{rule.resource_id}"
+                    if rule.resource_id
+                    else (
+                        f"group:{rule.equipment_group}"
+                        if rule.equipment_group
+                        else "global"
+                    )
+                )
+                active_by_resolution_key[
+                    (
+                        scope,
+                        rule.stage,
+                        rule.from_state_key,
+                        rule.to_program_id,
+                        rule.priority,
+                    )
+                ].append(rule.id)
+        for ids in active_by_resolution_key.values():
+            if len(ids) > 1:
+                self._add(
+                    "TRANSITION_RULE_INVALID",
+                    "furnace_transition_rule",
+                    ",".join(sorted(ids)),
+                    "同一层级和优先级存在多条有效规则。",
+                )
+
+    def _validate_transition_reachability(self):
+        programs = {item.id: item for item in self.instance.furnace_programs}
+        recipes = {item.id: item for item in self.instance.recipes}
+        states = {
+            item.resource_id: item for item in self.instance.furnace_state_snapshots
+        }
+        used_programs = {
+            recipe.furnace_program_id
+            for step in self.instance.steps
+            if step.stage in ("debinding", "sintering") and step.recipe_id
+            for recipe in (recipes.get(step.recipe_id),)
+            if recipe and recipe.furnace_program_id in programs
+        }
+        predecessor_states = {
+            programs[program_id].resulting_post_state_key
+            for program_id in used_programs
+        }
+        reported_conflicts = set()
+        for step in self.instance.steps:
+            if step.stage not in ("debinding", "sintering") or not step.recipe_id:
+                continue
+            recipe = recipes.get(step.recipe_id)
+            program_id = recipe.furnace_program_id if recipe else None
+            if program_id not in programs:
+                continue
+            reachable = False
+            for resource_id in sorted(step.certified_resource_ids):
+                from_states = set(predecessor_states)
+                if resource_id in states:
+                    from_states.add(states[resource_id].state_key)
+                for from_state in sorted(from_states):
+                    resolution = resolve_transition_rule(
+                        self.instance,
+                        resource_id,
+                        step.stage,
+                        from_state,
+                        program_id,
+                    )
+                    if resolution.conflict:
+                        key = tuple(resolution.candidate_rule_ids)
+                        if key not in reported_conflicts:
+                            reported_conflicts.add(key)
+                            self._add(
+                                "TRANSITION_RULE_INVALID",
+                                "furnace_transition_rule",
+                                ",".join(key),
+                            )
+                    elif resolution.allowed:
+                        reachable = True
+                        break
+                if reachable:
+                    break
+            if not reachable:
+                self._add(
+                    "FURNACE_PROGRAM_UNREACHABLE",
+                    "task",
+                    step.id,
+                )
 
     def _validate_furnaces_and_batches(self):
         equipment = {item.id: item for item in self.instance.equipment}
@@ -353,6 +563,122 @@ class PlanningInstanceValidator:
                 invalid = True
             if invalid:
                 self._add("FROZEN_LOAD_MISMATCH", "furnace_load", load.id)
+
+    def _validate_frozen_furnace_transitions(self):
+        loads = {item.id: item for item in self.instance.frozen_furnace_loads}
+        transitions_by_successor = defaultdict(list)
+        for transition in self.instance.frozen_furnace_transitions:
+            transitions_by_successor[transition.successor_load_id].append(transition)
+        rules = {item.id: item for item in self.instance.furnace_transition_rules}
+        programs = {item.id: item for item in self.instance.furnace_programs}
+        recipes = {item.id: item for item in self.instance.recipes}
+        states = {
+            item.resource_id: item for item in self.instance.furnace_state_snapshots
+        }
+        graph = {}
+        for load_id, load in loads.items():
+            incoming = transitions_by_successor.get(load_id, ())
+            if len(incoming) != 1:
+                self._add(
+                    "FROZEN_TRANSITION_MISMATCH",
+                    "furnace_load",
+                    load_id,
+                )
+                continue
+            transition = incoming[0]
+            rule = rules.get(transition.transition_rule_id)
+            recipe = recipes.get(load.recipe_id) if load.recipe_id else None
+            program_id = load.furnace_program_id or (
+                recipe.furnace_program_id if recipe else None
+            )
+            predecessor = (
+                loads.get(transition.predecessor_load_id)
+                if transition.predecessor_load_id
+                else None
+            )
+            from_state = None
+            predecessor_ready = 0
+            if predecessor:
+                predecessor_recipe = (
+                    recipes.get(predecessor.recipe_id)
+                    if predecessor.recipe_id
+                    else None
+                )
+                predecessor_program_id = predecessor.furnace_program_id or (
+                    predecessor_recipe.furnace_program_id
+                    if predecessor_recipe
+                    else None
+                )
+                predecessor_program = programs.get(predecessor_program_id)
+                from_state = (
+                    predecessor_program.resulting_post_state_key
+                    if predecessor_program
+                    else None
+                )
+                predecessor_ready = predecessor.end_minute
+                graph[load_id] = predecessor.id
+            else:
+                state = states.get(load.resource_id)
+                from_state = state.state_key if state else None
+                predecessor_ready = state.available_minute if state else 0
+
+            invalid = (
+                transition.resource_id != load.resource_id
+                or transition.status != "proposed"
+                or transition.end_minute < transition.start_minute
+                or transition.end_minute > load.start_minute
+                or transition.start_minute < predecessor_ready
+                or load.predecessor_load_id != transition.predecessor_load_id
+                or rule is None
+                or not rule.allowed
+                or not rule.enabled
+                or rule.transition_type != transition.transition_type
+                or transition.end_minute - transition.start_minute
+                != (rule.duration_minutes if rule else -1)
+                or from_state is None
+                or program_id is None
+            )
+            if not invalid:
+                resolution = resolve_transition_rule(
+                    self.instance,
+                    load.resource_id,
+                    load.stage,
+                    from_state,
+                    program_id,
+                )
+                invalid = (
+                    resolution.conflict
+                    or not resolution.allowed
+                    or resolution.rule.id != transition.transition_rule_id
+                )
+            if invalid:
+                self._add(
+                    "FROZEN_TRANSITION_MISMATCH",
+                    "furnace_transition",
+                    transition.id,
+                )
+
+        for transition in self.instance.frozen_furnace_transitions:
+            if transition.successor_load_id not in loads:
+                self._add(
+                    "FROZEN_TRANSITION_MISMATCH",
+                    "furnace_transition",
+                    transition.id,
+                )
+        for load_id in sorted(graph):
+            seen = set()
+            current = load_id
+            while current in graph:
+                if current in seen:
+                    self._add(
+                        "FROZEN_TRANSITION_MISMATCH",
+                        "furnace_load",
+                        load_id,
+                        "冻结炉次顺序形成循环。",
+                    )
+                    break
+                seen.add(current)
+                current = graph[current]
 
     def _validate_materials(self):
         materials = {item.id: item for item in self.instance.materials}

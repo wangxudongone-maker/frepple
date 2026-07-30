@@ -21,6 +21,24 @@ if mode != "ASGI":
             serializers.MlccRecipeDetailAPI,
         ),
         (
+            "mlccfurnaceprogram",
+            views.MlccFurnaceProgramList,
+            serializers.MlccFurnaceProgramAPI,
+            serializers.MlccFurnaceProgramDetailAPI,
+        ),
+        (
+            "mlccfurnacestatesnapshot",
+            views.MlccFurnaceStateSnapshotList,
+            serializers.MlccFurnaceStateSnapshotAPI,
+            serializers.MlccFurnaceStateSnapshotDetailAPI,
+        ),
+        (
+            "mlccfurnacetransitionrule",
+            views.MlccFurnaceTransitionRuleList,
+            serializers.MlccFurnaceTransitionRuleAPI,
+            serializers.MlccFurnaceTransitionRuleDetailAPI,
+        ),
+        (
             "mlccloadunitconversion",
             views.MlccLoadUnitConversionList,
             serializers.MlccLoadUnitConversionAPI,
@@ -63,6 +81,12 @@ if mode != "ASGI":
             serializers.MlccFurnaceLoadItemDetailAPI,
         ),
         (
+            "mlccfurnacetransition",
+            views.MlccFurnaceTransitionList,
+            serializers.MlccFurnaceTransitionAPI,
+            serializers.MlccFurnaceTransitionDetailAPI,
+        ),
+        (
             "mlccqualityhold",
             views.MlccQualityHoldList,
             serializers.MlccQualityHoldAPI,
@@ -92,7 +116,14 @@ if mode != "ASGI":
                     name=f"mlcc_{slug}_changelist",
                 ),
                 path(f"api/mlcc/{slug}/", list_api.as_view()),
-                path(f"api/mlcc/{slug}/<int:pk>/", detail_api.as_view()),
+                path(
+                    (
+                        f"api/mlcc/{slug}/<str:pk>/"
+                        if slug == "mlccfurnaceprogram"
+                        else f"api/mlcc/{slug}/<int:pk>/"
+                    ),
+                    detail_api.as_view(),
+                ),
             ]
         )
     urlpatterns.extend(

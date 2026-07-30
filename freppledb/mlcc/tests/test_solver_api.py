@@ -1,5 +1,4 @@
 from django.db import connection
-from django.db.models.query import QuerySet
 from django.test import TestCase
 from unittest.mock import patch
 from rest_framework.test import APIRequestFactory, force_authenticate
@@ -15,6 +14,7 @@ from freppledb.mlcc.models import (
     MlccPrecheckRun,
     MlccFurnaceLoad,
     MlccFurnaceLoadItem,
+    MlccFurnaceTransition,
     MlccScheduleResult,
     MlccScheduleRun,
 )
@@ -24,7 +24,7 @@ from freppledb.mlcc.solver.api import (
     MlccPrecheckResultAPI,
     MlccSolveAPI,
 )
-from freppledb.mlcc.solver.cpsat import solve
+from freppledb.mlcc.solver.phase3c import solve as solve_phase3c
 from freppledb.mlcc.solver.service import build_and_validate
 from freppledb.mlcc.solver.solution import SolverParameters
 from freppledb.mlcc.solver.solve_service import persist_preview_solution
@@ -94,7 +94,7 @@ class SolverAPITest(TestCase):
         response = MlccPlanningInstanceAPI.as_view()(request)
         self.assertEqual(response.status_code, 200)
         self.assertEqual(
-            response.data["instance"]["schema_version"], "mlcc-planning-instance/v1"
+            response.data["instance"]["schema_version"], "mlcc-planning-instance/v2"
         )
         self.assertEqual(response.data["precheck"]["BLOCKER"], 0)
         self.assertEqual(len(response.data["instance"]["batches"]), 100)
@@ -172,7 +172,7 @@ class SolverAPITest(TestCase):
         self.assertEqual(response.data["solution"]["solver_version"], "9.10.4067")
         self.assertEqual(
             response.data["solution"]["solution_mode"],
-            "phase3b_multi_batch",
+            "phase3c_transition",
         )
         self.assertIsNone(response.data["solution"]["fallback_reason"])
         self.assertEqual(len(response.data["solution"]["assignments"]), 500)
@@ -180,7 +180,7 @@ class SolverAPITest(TestCase):
             pk=response.data["preview_run_id"],
             status="complete",
         )
-        self.assertEqual(run.parameters["solution_mode"], "phase3b_multi_batch")
+        self.assertEqual(run.parameters["solution_mode"], "phase3c_transition")
         self.assertIsNone(run.parameters["fallback_reason"])
         self.assertTrue(run.parameters["last_successful_stage"])
         self.assertEqual(
@@ -191,6 +191,7 @@ class SolverAPITest(TestCase):
             ).count(),
             500,
         )
+        self.assertGreater(len(response.data["solution"]["furnace_transitions"]), 0)
 
     def test_solve_api_does_not_start_with_blockers(self):
         SolverDemoLoader().load_invalid()
@@ -224,21 +225,23 @@ class SolverAPITest(TestCase):
             source=VALID_SOURCE,
         )
         self.assertEqual(report.blocker_count, 0, report.issues)
-        solution = solve(instance, SolverParameters(max_time_seconds=30))
+        solution = solve_phase3c(instance, SolverParameters(max_time_seconds=30))
         before = (
             MlccScheduleRun.objects.count(),
             MlccScheduleResult.objects.count(),
             MlccFurnaceLoad.objects.filter(status="proposed").count(),
             MlccFurnaceLoadItem.objects.filter(furnace_load__status="proposed").count(),
+            MlccFurnaceTransition.objects.count(),
         )
-        original_bulk_create = QuerySet.bulk_create
 
-        def fail_schedule_results(queryset, objects, *args, **kwargs):
-            if queryset.model is MlccScheduleResult:
-                raise RuntimeError("intentional persistence failure")
-            return original_bulk_create(queryset, objects, *args, **kwargs)
+        def fail_transition_save(obj, *args, **kwargs):
+            raise RuntimeError("intentional transition persistence failure")
 
-        with patch.object(QuerySet, "bulk_create", new=fail_schedule_results):
+        with patch.object(
+            MlccFurnaceTransition,
+            "save",
+            new=fail_transition_save,
+        ):
             with self.assertRaisesRegex(RuntimeError, "intentional"):
                 persist_preview_solution(
                     instance,
@@ -254,6 +257,7 @@ class SolverAPITest(TestCase):
                 MlccFurnaceLoadItem.objects.filter(
                     furnace_load__status="proposed"
                 ).count(),
+                MlccFurnaceTransition.objects.count(),
             ),
         )
 
@@ -268,6 +272,7 @@ class SolverAPITest(TestCase):
             first.results.count(),
             first.furnace_loads.count(),
             MlccFurnaceLoadItem.objects.filter(furnace_load__run=first).count(),
+            first.furnace_transitions.count(),
         )
         second = persist_preview_solution(
             instance,
@@ -281,5 +286,6 @@ class SolverAPITest(TestCase):
                 second.results.count(),
                 second.furnace_loads.count(),
                 MlccFurnaceLoadItem.objects.filter(furnace_load__run=second).count(),
+                second.furnace_transitions.count(),
             ),
         )

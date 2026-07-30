@@ -8,12 +8,18 @@ from freppledb.mlcc.demo import SolverDemoLoader
 
 
 class Command(BaseCommand):
-    help = "Load deterministic valid_demo and invalid_demo MLCC solver input data"
+    help = "Load deterministic MLCC solver input demonstration data"
 
     def add_arguments(self, parser):
         parser.add_argument(
             "--dataset",
-            choices=("valid_demo", "invalid_demo", "both"),
+            choices=(
+                "valid_demo",
+                "invalid_demo",
+                "same_program_demo",
+                "transition_demo",
+                "both",
+            ),
             default="both",
         )
         parser.add_argument("--batches", type=int, default=100)
@@ -33,6 +39,16 @@ class Command(BaseCommand):
                     raise CommandError(str(exc)) from exc
             if options["dataset"] in ("invalid_demo", "both"):
                 result.append(loader.load_invalid())
+            if options["dataset"] == "same_program_demo":
+                try:
+                    result.append(loader.load_same_program(options["batches"]))
+                except ValueError as exc:
+                    raise CommandError(str(exc)) from exc
+            if options["dataset"] == "transition_demo":
+                try:
+                    result.append(loader.load_transition(options["batches"]))
+                except ValueError as exc:
+                    raise CommandError(str(exc)) from exc
             self.stdout.write(
                 self.style.SUCCESS(
                     json.dumps(result, ensure_ascii=False, sort_keys=True)

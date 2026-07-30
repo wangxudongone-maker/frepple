@@ -22,6 +22,10 @@ class MlccMigrationTest(TestCase):
             "mlcc_precheck_run",
             "mlcc_precheck_issue",
             "mlcc_load_unit_conversion",
+            "mlcc_furnace_program",
+            "mlcc_furnace_state_snapshot",
+            "mlcc_furnace_transition_rule",
+            "mlcc_furnace_transition",
         }
         self.assertTrue(expected_tables.issubset(tables))
 
@@ -69,7 +73,7 @@ class MlccUpgradeMigrationTest(TransactionTestCase):
     """Exercise the phase-1 PostgreSQL schema upgrade and idempotent re-migrate."""
 
     migrate_from = ("mlcc", "0002_core_attributes")
-    migrate_to = ("mlcc", "0006_furnace_load_attributes")
+    migrate_to = ("mlcc", "0007_furnace_transitions")
 
     def tearDown(self):
         MigrationExecutor(connection).migrate([self.migrate_to])
@@ -103,6 +107,7 @@ class MlccUpgradeMigrationTest(TransactionTestCase):
                 "0004_precheck_models",
                 "0005_furnace_batching",
                 "0006_furnace_load_attributes",
+                "0007_furnace_transitions",
             ],
         )
         executor.migrate([self.migrate_to])

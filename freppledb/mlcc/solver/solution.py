@@ -10,7 +10,7 @@ from typing import Any
 
 from .serializer import to_primitive
 
-SOLUTION_SCHEMA_VERSION = "mlcc-schedule-solution/v1"
+SOLUTION_SCHEMA_VERSION = "mlcc-schedule-solution/v2"
 SOLUTION_MODES = (
     "phase3b_multi_batch",
     "phase3a_fallback",
@@ -64,8 +64,8 @@ class FurnaceLoadAssignment:
     load_id: str
     operation_type: str
     equipment_id: str
-    recipe_id: str
-    recipe_version: str
+    recipe_id: str | None
+    recipe_version: str | None
     furnace_program_key: str
     start_minute: int
     end_minute: int
@@ -80,6 +80,32 @@ class FurnaceLoadAssignment:
     frozen: bool
     status: str = "proposed"
     constraint_summary: dict[str, Any] = field(default_factory=dict)
+    furnace_program_id: str | None = None
+    furnace_program_version: str | None = None
+    member_recipe_ids: tuple[str, ...] = ()
+    predecessor_load_id: str | None = None
+    successor_load_id: str | None = None
+    setup_before_minutes: int = 0
+
+
+@dataclass(frozen=True)
+class FurnaceTransitionAssignment:
+    transition_id: str
+    equipment_id: str
+    predecessor_load_id: str | None
+    initial_state_id: str | None
+    successor_load_id: str
+    from_state_key: str
+    to_program_key: str
+    rule_id: str
+    rule_scope_level: str
+    transition_type: str
+    start_minute: int
+    end_minute: int
+    duration_minutes: int
+    frozen: bool
+    status: str = "proposed"
+    resolution_evidence: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -91,6 +117,7 @@ class SchedulingSolution:
     parameters: SolverParameters
     assignments: tuple[TaskAssignment, ...] = ()
     furnace_loads: tuple[FurnaceLoadAssignment, ...] = ()
+    furnace_transitions: tuple[FurnaceTransitionAssignment, ...] = ()
     orders: tuple[OrderSchedule, ...] = ()
     objective_stages: tuple[ObjectiveStage, ...] = ()
     objective_values: dict[str, int] = field(default_factory=dict)
@@ -103,6 +130,9 @@ class SchedulingSolution:
     phase3a_baseline_metrics: dict[str, Any] = field(default_factory=dict)
     phase3b_metrics: dict[str, Any] = field(default_factory=dict)
     metric_deltas: dict[str, Any] = field(default_factory=dict)
+    phase3b_reference_metrics: dict[str, Any] = field(default_factory=dict)
+    phase3c_metrics: dict[str, Any] = field(default_factory=dict)
+    transition_constraint_cost: dict[str, Any] = field(default_factory=dict)
     schema_version: str = SOLUTION_SCHEMA_VERSION
 
     @property

@@ -141,7 +141,7 @@ jobs:
           python -m django shell -c "from freppledb.mlcc.models import MlccRecipe; assert MlccRecipe.objects.filter(source='mlcc_demo').exists()"
           popd
           python frepplectl.py migrate mlcc
-          python frepplectl.py shell -c "from django.db import connection; from freppledb.mlcc.models import MlccRecipe; assert MlccRecipe.objects.filter(source='mlcc_demo').exists(); assert {'mlcc_precheck_run', 'mlcc_precheck_issue', 'mlcc_load_unit_conversion'}.issubset(set(connection.introspection.table_names())); columns={c.name for c in connection.introspection.get_table_description(connection.cursor(), 'operationplan')}; assert {'mlcc_load_quantity', 'mlcc_load_unit'}.issubset(columns)"
+          python frepplectl.py shell -c "from django.db import connection; from freppledb.mlcc.models import MlccRecipe; assert MlccRecipe.objects.filter(source='mlcc_demo').exists(); assert {'mlcc_precheck_run', 'mlcc_precheck_issue', 'mlcc_load_unit_conversion', 'mlcc_furnace_program', 'mlcc_furnace_state_snapshot', 'mlcc_furnace_transition_rule', 'mlcc_furnace_transition'}.issubset(set(connection.introspection.table_names())); columns={c.name for c in connection.introspection.get_table_description(connection.cursor(), 'operationplan')}; assert {'mlcc_load_quantity', 'mlcc_load_unit'}.issubset(columns)"
 
           # Path C: the upgraded database is idempotent.
           python frepplectl.py migrate --plan | tee /tmp/mlcc-upgraded-plan.txt

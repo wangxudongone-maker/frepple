@@ -13,6 +13,10 @@ from .schema import (
     Equipment,
     EquipmentCapability,
     FrozenFurnaceLoad,
+    FrozenFurnaceTransition,
+    FurnaceProgram,
+    FurnaceStateSnapshot,
+    FurnaceTransitionRule,
     FurnaceLoadRequirement,
     MaterialAvailability,
     PlanningInstance,
@@ -70,7 +74,10 @@ def _decimal(value):
 def planning_instance_from_dict(payload):
     """Build the pure data contract without importing or returning ORM objects."""
 
-    if payload.get("schema_version") != SCHEMA_VERSION:
+    if payload.get("schema_version") not in (
+        "mlcc-planning-instance/v1",
+        SCHEMA_VERSION,
+    ):
         raise ValueError(
             "Unsupported planning instance schema version: "
             f"{payload.get('schema_version')!r}"
@@ -182,6 +189,7 @@ def planning_instance_from_dict(payload):
                 resource_id=str(item["resource_id"]),
                 capacity=_decimal(item.get("capacity")),
                 load_unit=item.get("load_unit"),
+                equipment_group=item.get("equipment_group"),
                 shifts=tuple(
                     CalendarInterval(
                         start_minute=int(interval["start_minute"]),
@@ -234,9 +242,57 @@ def planning_instance_from_dict(payload):
                 setup_family=item.get("setup_family"),
                 parameters=dict(item.get("parameters", {})),
                 furnace_program_key=item.get("furnace_program_key"),
+                furnace_program_id=item.get("furnace_program_id"),
                 compatibility_group=item.get("compatibility_group"),
             )
             for item in payload.get("recipes", ())
+        ),
+        furnace_programs=tuple(
+            FurnaceProgram(
+                id=str(item["id"]),
+                program_key=str(item["program_key"]),
+                version=str(item["version"]),
+                stage=str(item["stage"]),
+                atmosphere_key=str(item["atmosphere_key"]),
+                required_pre_state_key=str(item["required_pre_state_key"]),
+                resulting_post_state_key=str(item["resulting_post_state_key"]),
+                effective_date=str(item["effective_date"]),
+                expiry_date=item.get("expiry_date"),
+                active=bool(item["active"]),
+            )
+            for item in payload.get("furnace_programs", ())
+        ),
+        furnace_state_snapshots=tuple(
+            FurnaceStateSnapshot(
+                id=str(item["id"]),
+                resource_id=str(item["resource_id"]),
+                observed_minute=int(item["observed_minute"]),
+                state_key=str(item["state_key"]),
+                current_program_id=item.get("current_program_id"),
+                available_minute=int(item["available_minute"]),
+                source=item.get("source"),
+            )
+            for item in payload.get("furnace_state_snapshots", ())
+        ),
+        furnace_transition_rules=tuple(
+            FurnaceTransitionRule(
+                id=str(item["id"]),
+                resource_id=item.get("resource_id"),
+                equipment_group=item.get("equipment_group"),
+                stage=str(item["stage"]),
+                from_state_key=str(item["from_state_key"]),
+                to_program_id=str(item["to_program_id"]),
+                transition_type=str(item["transition_type"]),
+                duration_minutes=int(item["duration_minutes"]),
+                setup_cost=_decimal(item["setup_cost"]),
+                allowed=bool(item["allowed"]),
+                enabled=bool(item["enabled"]),
+                priority=int(item["priority"]),
+                effective_date=str(item["effective_date"]),
+                expiry_date=item.get("expiry_date"),
+                scope_level=str(item["scope_level"]),
+            )
+            for item in payload.get("furnace_transition_rules", ())
         ),
         compatibility_rules=tuple(
             CompatibilityRule(
@@ -289,8 +345,25 @@ def planning_instance_from_dict(payload):
                 load_unit=str(item["load_unit"]),
                 member_task_ids=tuple(item.get("member_task_ids", ())),
                 status=str(item["status"]),
+                furnace_program_id=item.get("furnace_program_id"),
+                predecessor_load_id=item.get("predecessor_load_id"),
+                successor_load_id=item.get("successor_load_id"),
             )
             for item in payload.get("frozen_furnace_loads", ())
+        ),
+        frozen_furnace_transitions=tuple(
+            FrozenFurnaceTransition(
+                id=str(item["id"]),
+                resource_id=str(item["resource_id"]),
+                predecessor_load_id=item.get("predecessor_load_id"),
+                successor_load_id=str(item["successor_load_id"]),
+                transition_rule_id=str(item["transition_rule_id"]),
+                transition_type=str(item["transition_type"]),
+                start_minute=int(item["start_minute"]),
+                end_minute=int(item["end_minute"]),
+                status=str(item["status"]),
+            )
+            for item in payload.get("frozen_furnace_transitions", ())
         ),
     )
 

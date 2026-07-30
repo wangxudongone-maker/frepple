@@ -13,7 +13,11 @@ from freppledb.mlcc.solver.schema import (
     CustomerOrder,
     Equipment,
     EquipmentCapability,
+    FrozenFurnaceLoad,
+    FurnaceProgram,
     FurnaceLoadRequirement,
+    FurnaceStateSnapshot,
+    FurnaceTransitionRule,
     MaterialAvailability,
     PlanningInstance,
     PlanningWindow,
@@ -80,6 +84,9 @@ def valid_instance():
                 resource_id=stage,
                 capacity=Decimal("1000"),
                 load_unit="tray" if stage in ("debinding", "sintering") else "panel",
+                equipment_group=(
+                    "furnace-group" if stage in ("debinding", "sintering") else None
+                ),
                 shifts=(CalendarInterval(0, 20160, "shift"),),
             )
         )
@@ -139,6 +146,7 @@ def valid_instance():
                 active=True,
                 setup_family="debinding-a",
                 furnace_program_key="DEBINDING-V1",
+                furnace_program_id="furnace_program:debinding-v1",
                 compatibility_group="CERAMIC-A",
             ),
             Recipe(
@@ -151,7 +159,122 @@ def valid_instance():
                 active=True,
                 setup_family="sintering-a",
                 furnace_program_key="SINTERING-V1",
+                furnace_program_id="furnace_program:sintering-v1",
                 compatibility_group="CERAMIC-A",
+            ),
+        ),
+        furnace_programs=(
+            FurnaceProgram(
+                id="furnace_program:debinding-v1",
+                program_key="DEBINDING-V1",
+                version="V1",
+                stage="debinding",
+                atmosphere_key="N2",
+                required_pre_state_key="debinding-idle",
+                resulting_post_state_key="debinding-done",
+                effective_date="2025-01-01",
+                expiry_date=None,
+                active=True,
+            ),
+            FurnaceProgram(
+                id="furnace_program:sintering-v1",
+                program_key="SINTERING-V1",
+                version="V1",
+                stage="sintering",
+                atmosphere_key="AIR",
+                required_pre_state_key="sintering-idle",
+                resulting_post_state_key="sintering-done",
+                effective_date="2025-01-01",
+                expiry_date=None,
+                active=True,
+            ),
+        ),
+        furnace_state_snapshots=(
+            FurnaceStateSnapshot(
+                id="furnace_state:debinding",
+                resource_id="resource:debinding",
+                observed_minute=-60,
+                state_key="debinding-idle",
+                current_program_id=None,
+                available_minute=0,
+            ),
+            FurnaceStateSnapshot(
+                id="furnace_state:sintering",
+                resource_id="resource:sintering",
+                observed_minute=-60,
+                state_key="sintering-idle",
+                current_program_id=None,
+                available_minute=0,
+            ),
+        ),
+        furnace_transition_rules=(
+            FurnaceTransitionRule(
+                id="transition_rule:debinding-initial",
+                resource_id="resource:debinding",
+                equipment_group=None,
+                stage="debinding",
+                from_state_key="debinding-idle",
+                to_program_id="furnace_program:debinding-v1",
+                transition_type="none",
+                duration_minutes=0,
+                setup_cost=Decimal("0"),
+                allowed=True,
+                enabled=True,
+                priority=0,
+                effective_date="2025-01-01",
+                expiry_date=None,
+                scope_level="resource",
+            ),
+            FurnaceTransitionRule(
+                id="transition_rule:debinding-self",
+                resource_id="resource:debinding",
+                equipment_group=None,
+                stage="debinding",
+                from_state_key="debinding-done",
+                to_program_id="furnace_program:debinding-v1",
+                transition_type="none",
+                duration_minutes=0,
+                setup_cost=Decimal("0"),
+                allowed=True,
+                enabled=True,
+                priority=0,
+                effective_date="2025-01-01",
+                expiry_date=None,
+                scope_level="resource",
+            ),
+            FurnaceTransitionRule(
+                id="transition_rule:sintering-initial",
+                resource_id="resource:sintering",
+                equipment_group=None,
+                stage="sintering",
+                from_state_key="sintering-idle",
+                to_program_id="furnace_program:sintering-v1",
+                transition_type="none",
+                duration_minutes=0,
+                setup_cost=Decimal("0"),
+                allowed=True,
+                enabled=True,
+                priority=0,
+                effective_date="2025-01-01",
+                expiry_date=None,
+                scope_level="resource",
+            ),
+            FurnaceTransitionRule(
+                id="transition_rule:sintering-self",
+                resource_id="resource:sintering",
+                equipment_group=None,
+                stage="sintering",
+                from_state_key="sintering-done",
+                to_program_id="furnace_program:sintering-v1",
+                transition_type="none",
+                duration_minutes=0,
+                setup_cost=Decimal("0"),
+                allowed=True,
+                enabled=True,
+                priority=0,
+                effective_date="2025-01-01",
+                expiry_date=None,
+                scope_level="resource",
             ),
         ),
         compatibility_rules=(
@@ -367,3 +490,87 @@ class SolverValidationRuleTest(SimpleTestCase):
         self.assertTrue(target.reason)
         self.assertTrue(target.suggestion)
         self.assertTrue(target.source_field)
+
+    def test_recipe_program_mapping_is_required(self):
+        instance = valid_instance()
+        recipes = (
+            replace(instance.recipes[0], furnace_program_id=None),
+            instance.recipes[1],
+        )
+        self.assertIn(
+            "MLCC-P021",
+            self.codes(replace(instance, recipes=recipes)),
+        )
+
+    def test_initial_furnace_state_is_required(self):
+        instance = valid_instance()
+        states = tuple(
+            item
+            for item in instance.furnace_state_snapshots
+            if item.resource_id != "resource:sintering"
+        )
+        self.assertIn(
+            "MLCC-P022",
+            self.codes(replace(instance, furnace_state_snapshots=states)),
+        )
+
+    def test_transition_rule_conflict_is_blocker(self):
+        instance = valid_instance()
+        duplicate = replace(
+            instance.furnace_transition_rules[0],
+            id="transition_rule:duplicate",
+        )
+        self.assertIn(
+            "MLCC-P023",
+            self.codes(
+                replace(
+                    instance,
+                    furnace_transition_rules=instance.furnace_transition_rules
+                    + (duplicate,),
+                )
+            ),
+        )
+
+    def test_unreachable_program_is_blocker(self):
+        instance = valid_instance()
+        rules = tuple(
+            replace(item, allowed=False) if item.stage == "sintering" else item
+            for item in instance.furnace_transition_rules
+        )
+        self.assertIn(
+            "MLCC-P024",
+            self.codes(replace(instance, furnace_transition_rules=rules)),
+        )
+
+    def test_frozen_load_without_transition_is_blocker(self):
+        instance = valid_instance()
+        task = replace(
+            instance.steps[-1],
+            frozen=True,
+            assigned_resource_id="resource:sintering",
+        )
+        frozen = FrozenFurnaceLoad(
+            id="furnace_load:frozen",
+            stage="sintering",
+            resource_id="resource:sintering",
+            recipe_id="recipe:sintering",
+            furnace_program_key="SINTERING-V1",
+            start_minute=task.original_start_minute,
+            end_minute=task.original_end_minute,
+            capacity=1000,
+            loaded_quantity=1,
+            load_unit="tray",
+            member_task_ids=(task.id,),
+            status="running",
+            furnace_program_id="furnace_program:sintering-v1",
+        )
+        self.assertIn(
+            "MLCC-P025",
+            self.codes(
+                replace(
+                    instance,
+                    steps=instance.steps[:-1] + (task,),
+                    frozen_furnace_loads=(frozen,),
+                )
+            ),
+        )

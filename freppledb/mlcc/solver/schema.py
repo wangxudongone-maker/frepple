@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Any
 
-SCHEMA_VERSION = "mlcc-planning-instance/v1"
+SCHEMA_VERSION = "mlcc-planning-instance/v2"
 PROCESS_STAGE_ORDER = (
     "stacking",
     "lamination",
@@ -87,6 +87,7 @@ class Equipment:
     resource_id: str
     capacity: Decimal | None
     load_unit: str | None
+    equipment_group: str | None = None
     shifts: tuple[CalendarInterval, ...] = ()
     downtimes: tuple[CalendarInterval, ...] = ()
     maintenance: tuple[CalendarInterval, ...] = ()
@@ -116,7 +117,52 @@ class Recipe:
     setup_family: str | None
     parameters: dict[str, Any] = field(default_factory=dict)
     furnace_program_key: str | None = None
+    furnace_program_id: str | None = None
     compatibility_group: str | None = None
+
+
+@dataclass(frozen=True)
+class FurnaceProgram:
+    id: str
+    program_key: str
+    version: str
+    stage: str
+    atmosphere_key: str
+    required_pre_state_key: str
+    resulting_post_state_key: str
+    effective_date: str
+    expiry_date: str | None
+    active: bool
+
+
+@dataclass(frozen=True)
+class FurnaceStateSnapshot:
+    id: str
+    resource_id: str
+    observed_minute: int
+    state_key: str
+    current_program_id: str | None
+    available_minute: int
+    source: str | None = None
+
+
+@dataclass(frozen=True)
+class FurnaceTransitionRule:
+    id: str
+    resource_id: str | None
+    equipment_group: str | None
+    stage: str
+    from_state_key: str
+    to_program_id: str
+    transition_type: str
+    duration_minutes: int
+    setup_cost: Decimal
+    allowed: bool
+    enabled: bool
+    priority: int
+    effective_date: str
+    expiry_date: str | None
+    scope_level: str
 
 
 @dataclass(frozen=True)
@@ -136,7 +182,7 @@ class FrozenFurnaceLoad:
     id: str
     stage: str
     resource_id: str
-    recipe_id: str
+    recipe_id: str | None
     furnace_program_key: str
     start_minute: int
     end_minute: int
@@ -144,6 +190,22 @@ class FrozenFurnaceLoad:
     loaded_quantity: int
     load_unit: str
     member_task_ids: tuple[str, ...]
+    status: str
+    furnace_program_id: str | None = None
+    predecessor_load_id: str | None = None
+    successor_load_id: str | None = None
+
+
+@dataclass(frozen=True)
+class FrozenFurnaceTransition:
+    id: str
+    resource_id: str
+    predecessor_load_id: str | None
+    successor_load_id: str
+    transition_rule_id: str
+    transition_type: str
+    start_minute: int
+    end_minute: int
     status: str
 
 
@@ -186,10 +248,14 @@ class PlanningInstance:
     equipment: tuple[Equipment, ...] = ()
     capabilities: tuple[EquipmentCapability, ...] = ()
     recipes: tuple[Recipe, ...] = ()
+    furnace_programs: tuple[FurnaceProgram, ...] = ()
+    furnace_state_snapshots: tuple[FurnaceStateSnapshot, ...] = ()
+    furnace_transition_rules: tuple[FurnaceTransitionRule, ...] = ()
     compatibility_rules: tuple[CompatibilityRule, ...] = ()
     setup_rules: tuple[SetupRule, ...] = ()
     materials: tuple[MaterialAvailability, ...] = ()
     frozen_furnace_loads: tuple[FrozenFurnaceLoad, ...] = ()
+    frozen_furnace_transitions: tuple[FrozenFurnaceTransition, ...] = ()
     schema_version: str = SCHEMA_VERSION
 
     @property

@@ -37,6 +37,11 @@
 | `MLCC-P018` | BLOCKER | 炉工序配方不唯一或缺少明确炉程键 | 配方版本、`furnace_program_key` |
 | `MLCC-P019` | BLOCKER | 冻结炉次成员、容量、设备、时间或配方不一致 | 炉次及炉次成员表 |
 | `MLCC-P020` | BLOCKER | 装载单位缺失、无法换算或不能精确转为整数 | 装载单位及显式换算表 |
+| `MLCC-P021` | BLOCKER | recipe 到炉程映射缺失、失效、冲突或不唯一 | `mlcc_recipe.furnace_program/furnace_program_key` |
+| `MLCC-P022` | BLOCKER | 候选炉在排产起点缺少唯一有效的最新状态 | `mlcc_furnace_state_snapshot` |
+| `MLCC-P023` | BLOCKER | 转换规则重复、同级冲突、时长/成本无效或层级无法唯一解析 | `mlcc_furnace_transition_rule` |
+| `MLCC-P024` | BLOCKER | 目标炉程在全部候选炉上均不存在允许的初始或前序转换路径 | `mlcc_furnace_transition_rule.allowed` |
+| `MLCC-P025` | BLOCKER | 冻结/已开工炉次的顺序、状态或转换记录不一致 | `mlcc_furnace_transition`、初始状态 |
 
 ## 确定性与去重
 
@@ -45,9 +50,15 @@
 ## 演示数据
 
 - `valid_demo`：默认 100 批，可配置为 100～500 批，预检无 BLOCKER。
-- `invalid_demo`：故意包含 `MLCC-P001`～`MLCC-P020` 的触发数据；不用于生产基础数据。
+- `invalid_demo`：故意包含 `MLCC-P001`～`MLCC-P025` 的触发数据；不用于生产基础数据。
+- `same_program_demo`：100～500 批，全部炉程自转换均为显式零分钟，用于 B/C 等价回归。
+- `transition_demo`：至少 3 个烧结炉程、2 台烧结炉，包含方向相关清洗、气氛置换、初始状态和 1 个冻结炉次。
 
 ```bash
 python frepplectl.py load_mlcc_solver_demo --dataset valid_demo --batches 100
 python frepplectl.py load_mlcc_solver_demo --dataset invalid_demo
+python frepplectl.py load_mlcc_solver_demo --dataset same_program_demo --batches 100
+python frepplectl.py load_mlcc_solver_demo --dataset transition_demo --batches 100
 ```
+
+规则解析固定为精确设备 > 设备组 > 全局，再选择最小 `priority`。同一层级同一优先级多条有效规则是 P023；缺少规则默认禁止。只有当某炉程在全部候选炉上都不可达时才产生 P024，单台炉缺少路径但仍有其他可行炉不会被误判为 BLOCKER。

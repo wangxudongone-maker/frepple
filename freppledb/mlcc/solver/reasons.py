@@ -171,6 +171,41 @@ REASONS = {
         "维护显式单位及整数比例换算；如需小数容量，请改用更小的整数计量单位。",
         "operationplan.mlcc_load_unit/mlcc_load_unit_conversion",
     ),
+    "FURNACE_PROGRAM_MAPPING_INVALID": ReasonDefinition(
+        "MLCC-P021",
+        Severity.BLOCKER,
+        "配方到炉程的映射缺失、失效、冲突或不唯一。",
+        "为每个排胶、烧结配方关联唯一且当前有效的炉程版本，并保持旧炉程键一致。",
+        "mlcc_recipe.furnace_program/furnace_program_key",
+    ),
+    "INITIAL_FURNACE_STATE_INVALID": ReasonDefinition(
+        "MLCC-P022",
+        Severity.BLOCKER,
+        "排产起点的候选炉缺少有效的初始炉状态。",
+        "在排产起点之前记录该设备最新炉状态及可用时间。",
+        "mlcc_furnace_state_snapshot",
+    ),
+    "TRANSITION_RULE_INVALID": ReasonDefinition(
+        "MLCC-P023",
+        Severity.BLOCKER,
+        "炉状态转换规则重复、冲突、时长无效或规则层级无法唯一解析。",
+        "按设备、设备组、全局层级保留唯一有效规则，并维护非负转换时长。",
+        "mlcc_furnace_transition_rule",
+    ),
+    "FURNACE_PROGRAM_UNREACHABLE": ReasonDefinition(
+        "MLCC-P024",
+        Severity.BLOCKER,
+        "炉程在全部候选炉上均不存在可达的初始或前序转换路径。",
+        "补充允许的初始状态或前序炉状态到目标炉程转换规则，或增加合格候选炉。",
+        "mlcc_furnace_transition_rule.allowed",
+    ),
+    "FROZEN_TRANSITION_MISMATCH": ReasonDefinition(
+        "MLCC-P025",
+        Severity.BLOCKER,
+        "冻结或已开工炉次的顺序、炉状态或转换记录不一致。",
+        "恢复冻结炉次原顺序、设备、时间和转换规则，或先解除冻结。",
+        "mlcc_furnace_transition/mlcc_furnace_state_snapshot",
+    ),
 }
 
 

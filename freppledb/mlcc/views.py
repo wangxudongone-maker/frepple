@@ -20,6 +20,10 @@ from .models import (
     MlccEquipmentCapability,
     MlccFurnaceLoad,
     MlccFurnaceLoadItem,
+    MlccFurnaceProgram,
+    MlccFurnaceStateSnapshot,
+    MlccFurnaceTransition,
+    MlccFurnaceTransitionRule,
     MlccLoadUnitConversion,
     MlccQualityHold,
     MlccPrecheckIssue,
@@ -40,6 +44,16 @@ def detail_id(role):
         formatter="detail",
         extra=f'"role":"mlcc/{role}"',
         initially_hidden=True,
+    )
+
+
+def detail_text_id(role):
+    return GridFieldText(
+        "id",
+        title=_("stable business identifier"),
+        key=True,
+        formatter="detail",
+        extra=f'"role":"mlcc/{role}"',
     )
 
 
@@ -78,9 +92,87 @@ class MlccRecipeList(GridReport):
             extra='"role":"input/operation"',
         ),
         GridFieldBool("active", title=_("active")),
+        GridFieldText(
+            "furnace_program",
+            title=_("furnace program"),
+            field_name="furnace_program__id",
+        ),
         GridFieldText("furnace_program_key", title=_("furnace program key")),
         GridFieldText("compatibility_group", title=_("certified compatibility group")),
         GridFieldJSON("parameters", title=_("parameters")),
+    ) + common_tail
+
+
+class MlccFurnaceProgramList(GridReport):
+    title = _("MLCC furnace programs")
+    model = MlccFurnaceProgram
+    basequeryset = MlccFurnaceProgram.objects.all()
+    frozenColumns = 1
+    rows = (
+        detail_text_id("mlccfurnaceprogram"),
+        GridFieldText("program_key", title=_("furnace program key")),
+        GridFieldText("version", title=_("version")),
+        GridFieldChoice(
+            "process_stage", title=_("process stage"), choices=PROCESS_STAGES
+        ),
+        GridFieldText("atmosphere_key", title=_("atmosphere key")),
+        GridFieldText("required_pre_state_key", title=_("required pre-state key")),
+        GridFieldText("resulting_post_state_key", title=_("resulting post-state key")),
+        GridFieldDate("effective_date", title=_("effective date")),
+        GridFieldDate("expiry_date", title=_("expiry date")),
+        GridFieldBool("active", title=_("active")),
+    ) + common_tail
+
+
+class MlccFurnaceStateSnapshotList(GridReport):
+    title = _("MLCC furnace state snapshots")
+    model = MlccFurnaceStateSnapshot
+    basequeryset = MlccFurnaceStateSnapshot.objects.all()
+    frozenColumns = 1
+    rows = (
+        detail_id("mlccfurnacestatesnapshot"),
+        GridFieldText("resource", title=_("resource"), field_name="resource__name"),
+        GridFieldDateTime("observed_at", title=_("observed at")),
+        GridFieldText("state_key", title=_("state key")),
+        GridFieldText(
+            "current_program",
+            title=_("current furnace program"),
+            field_name="current_program__id",
+        ),
+        GridFieldDateTime("available_at", title=_("available at")),
+    ) + common_tail
+
+
+class MlccFurnaceTransitionRuleList(GridReport):
+    title = _("MLCC furnace transition rules")
+    model = MlccFurnaceTransitionRule
+    basequeryset = MlccFurnaceTransitionRule.objects.all()
+    frozenColumns = 1
+    rows = (
+        detail_id("mlccfurnacetransitionrule"),
+        GridFieldText("resource", title=_("resource"), field_name="resource__name"),
+        GridFieldText("equipment_group", title=_("equipment group")),
+        GridFieldChoice(
+            "process_stage", title=_("process stage"), choices=PROCESS_STAGES
+        ),
+        GridFieldText("from_state_key", title=_("from state key")),
+        GridFieldText(
+            "to_program",
+            title=_("target furnace program"),
+            field_name="to_program__id",
+        ),
+        GridFieldChoice(
+            "transition_type",
+            title=_("transition type"),
+            choices=MlccFurnaceTransitionRule.TRANSITION_TYPES,
+        ),
+        GridFieldDuration("duration", title=_("duration")),
+        GridFieldNumber("setup_cost", title=_("setup cost")),
+        GridFieldBool("allowed", title=_("allowed")),
+        GridFieldBool("enabled", title=_("enabled")),
+        GridFieldInteger("priority", title=_("priority")),
+        GridFieldDate("effective_date", title=_("effective date")),
+        GridFieldDate("expiry_date", title=_("expiry date")),
     ) + common_tail
 
 
@@ -194,6 +286,11 @@ class MlccFurnaceLoadList(GridReport):
         GridFieldText("run", title=_("schedule run"), field_name="run__name"),
         GridFieldText("resource", title=_("resource"), field_name="resource__name"),
         GridFieldText("recipe", title=_("recipe"), field_name="recipe__name"),
+        GridFieldText(
+            "furnace_program",
+            title=_("furnace program"),
+            field_name="furnace_program__id",
+        ),
         GridFieldChoice(
             "operation_type", title=_("operation type"), choices=PROCESS_STAGES
         ),
@@ -205,6 +302,44 @@ class MlccFurnaceLoadList(GridReport):
         GridFieldNumber("loaded_quantity", title=_("loaded quantity")),
         GridFieldText("load_unit", title=_("load unit")),
         GridFieldBool("frozen", title=_("frozen")),
+        GridFieldJSON("details", title=_("details")),
+    ) + common_tail
+
+
+class MlccFurnaceTransitionList(GridReport):
+    title = _("MLCC furnace transitions")
+    model = MlccFurnaceTransition
+    basequeryset = MlccFurnaceTransition.objects.all()
+    frozenColumns = 1
+    rows = (
+        detail_id("mlccfurnacetransition"),
+        GridFieldText("run", title=_("schedule run"), field_name="run__name"),
+        GridFieldText("resource", title=_("resource"), field_name="resource__name"),
+        GridFieldText(
+            "predecessor_load",
+            title=_("predecessor furnace load"),
+            field_name="predecessor_load__reference",
+        ),
+        GridFieldText(
+            "successor_load",
+            title=_("successor furnace load"),
+            field_name="successor_load__reference",
+        ),
+        GridFieldInteger(
+            "transition_rule",
+            title=_("transition rule"),
+            field_name="transition_rule__id",
+        ),
+        GridFieldChoice(
+            "transition_type",
+            title=_("transition type"),
+            choices=MlccFurnaceTransitionRule.TRANSITION_TYPES,
+        ),
+        GridFieldDateTime("planned_start", title=_("planned start")),
+        GridFieldDateTime("planned_end", title=_("planned end")),
+        GridFieldChoice(
+            "status", title=_("status"), choices=MlccFurnaceTransition.STATUSES
+        ),
         GridFieldJSON("details", title=_("details")),
     ) + common_tail
 

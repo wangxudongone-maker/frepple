@@ -15,6 +15,10 @@ from .models import (
     MlccEquipmentCapability,
     MlccFurnaceLoad,
     MlccFurnaceLoadItem,
+    MlccFurnaceProgram,
+    MlccFurnaceStateSnapshot,
+    MlccFurnaceTransition,
+    MlccFurnaceTransitionRule,
     MlccLoadUnitConversion,
     MlccQualityHold,
     MlccRecipe,
@@ -61,6 +65,76 @@ class MlccRecipeFilter(filters.FilterSet):
 class MlccRecipeSerializer(MlccModelSerializer):
     class Meta:
         model = MlccRecipe
+        fields = "__all__"
+        read_only_fields = ("lastmodified",)
+        list_serializer_class = BulkListSerializer
+        update_lookup_field = "id"
+        partial = True
+
+
+class MlccFurnaceProgramFilter(filters.FilterSet):
+    class Meta:
+        model = MlccFurnaceProgram
+        fields = {
+            "id": ["exact", "in", "contains"],
+            "program_key": ["exact", "in", "contains"],
+            "version": ["exact", "in"],
+            "process_stage": ["exact", "in"],
+            "atmosphere_key": ["exact", "in"],
+            "active": ["exact"],
+        }
+
+
+class MlccFurnaceProgramSerializer(MlccModelSerializer):
+    class Meta:
+        model = MlccFurnaceProgram
+        fields = "__all__"
+        read_only_fields = ("lastmodified",)
+        list_serializer_class = BulkListSerializer
+        update_lookup_field = "id"
+        partial = True
+
+
+class MlccFurnaceStateSnapshotFilter(filters.FilterSet):
+    class Meta:
+        model = MlccFurnaceStateSnapshot
+        fields = {
+            "resource": ["exact", "in"],
+            "state_key": ["exact", "in"],
+            "current_program": ["exact", "in"],
+            "observed_at": ["exact", "gt", "gte", "lt", "lte"],
+            "available_at": ["exact", "gt", "gte", "lt", "lte"],
+        }
+
+
+class MlccFurnaceStateSnapshotSerializer(MlccModelSerializer):
+    class Meta:
+        model = MlccFurnaceStateSnapshot
+        fields = "__all__"
+        read_only_fields = ("lastmodified",)
+        list_serializer_class = BulkListSerializer
+        update_lookup_field = "id"
+        partial = True
+
+
+class MlccFurnaceTransitionRuleFilter(filters.FilterSet):
+    class Meta:
+        model = MlccFurnaceTransitionRule
+        fields = {
+            "resource": ["exact", "in"],
+            "equipment_group": ["exact", "in"],
+            "process_stage": ["exact", "in"],
+            "from_state_key": ["exact", "in"],
+            "to_program": ["exact", "in"],
+            "transition_type": ["exact", "in"],
+            "allowed": ["exact"],
+            "enabled": ["exact"],
+        }
+
+
+class MlccFurnaceTransitionRuleSerializer(MlccModelSerializer):
+    class Meta:
+        model = MlccFurnaceTransitionRule
         fields = "__all__"
         read_only_fields = ("lastmodified",)
         list_serializer_class = BulkListSerializer
@@ -217,6 +291,30 @@ class MlccFurnaceLoadItemSerializer(MlccModelSerializer):
         partial = True
 
 
+class MlccFurnaceTransitionFilter(filters.FilterSet):
+    class Meta:
+        model = MlccFurnaceTransition
+        fields = {
+            "run": ["exact", "in"],
+            "resource": ["exact", "in"],
+            "predecessor_load": ["exact", "in"],
+            "successor_load": ["exact", "in"],
+            "transition_rule": ["exact", "in"],
+            "transition_type": ["exact", "in"],
+            "status": ["exact", "in"],
+        }
+
+
+class MlccFurnaceTransitionSerializer(MlccModelSerializer):
+    class Meta:
+        model = MlccFurnaceTransition
+        fields = "__all__"
+        read_only_fields = ("lastmodified",)
+        list_serializer_class = BulkListSerializer
+        update_lookup_field = "id"
+        partial = True
+
+
 class MlccQualityHoldFilter(filters.FilterSet):
     class Meta:
         model = MlccQualityHold
@@ -308,6 +406,21 @@ def _api_classes(model, serializer, filter_class):
 MlccRecipeAPI, MlccRecipeDetailAPI = _api_classes(
     MlccRecipe, MlccRecipeSerializer, MlccRecipeFilter
 )
+MlccFurnaceProgramAPI, MlccFurnaceProgramDetailAPI = _api_classes(
+    MlccFurnaceProgram,
+    MlccFurnaceProgramSerializer,
+    MlccFurnaceProgramFilter,
+)
+MlccFurnaceStateSnapshotAPI, MlccFurnaceStateSnapshotDetailAPI = _api_classes(
+    MlccFurnaceStateSnapshot,
+    MlccFurnaceStateSnapshotSerializer,
+    MlccFurnaceStateSnapshotFilter,
+)
+MlccFurnaceTransitionRuleAPI, MlccFurnaceTransitionRuleDetailAPI = _api_classes(
+    MlccFurnaceTransitionRule,
+    MlccFurnaceTransitionRuleSerializer,
+    MlccFurnaceTransitionRuleFilter,
+)
 MlccLoadUnitConversionAPI, MlccLoadUnitConversionDetailAPI = _api_classes(
     MlccLoadUnitConversion,
     MlccLoadUnitConversionSerializer,
@@ -334,6 +447,11 @@ MlccFurnaceLoadAPI, MlccFurnaceLoadDetailAPI = _api_classes(
 )
 MlccFurnaceLoadItemAPI, MlccFurnaceLoadItemDetailAPI = _api_classes(
     MlccFurnaceLoadItem, MlccFurnaceLoadItemSerializer, MlccFurnaceLoadItemFilter
+)
+MlccFurnaceTransitionAPI, MlccFurnaceTransitionDetailAPI = _api_classes(
+    MlccFurnaceTransition,
+    MlccFurnaceTransitionSerializer,
+    MlccFurnaceTransitionFilter,
 )
 MlccQualityHoldAPI, MlccQualityHoldDetailAPI = _api_classes(
     MlccQualityHold, MlccQualityHoldSerializer, MlccQualityHoldFilter

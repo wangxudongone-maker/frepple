@@ -8,7 +8,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from django.conf import settings
 from django.db import DEFAULT_DB_ALIAS
-from django.db.models import Q
+from django.db.models import F, Q
 from django.utils import timezone
 
 from freppledb.input.models import (
@@ -26,6 +26,10 @@ from freppledb.mlcc.models import (
     MlccCompatibilityRule,
     MlccEquipmentCapability,
     MlccFurnaceLoad,
+    MlccFurnaceProgram,
+    MlccFurnaceStateSnapshot,
+    MlccFurnaceTransition,
+    MlccFurnaceTransitionRule,
     MlccLoadUnitConversion,
     MlccQualityHold,
     MlccRecipe,
@@ -40,7 +44,11 @@ from .schema import (
     Equipment,
     EquipmentCapability,
     FrozenFurnaceLoad,
+    FrozenFurnaceTransition,
+    FurnaceProgram,
     FurnaceLoadRequirement,
+    FurnaceStateSnapshot,
+    FurnaceTransitionRule,
     MaterialAvailability,
     PlanningInstance,
     PlanningWindow,
@@ -48,6 +56,11 @@ from .schema import (
     ProductionBatch,
     Recipe,
     SetupRule,
+)
+from .transition_rules import (
+    stable_furnace_state_id,
+    stable_furnace_transition_id,
+    stable_transition_rule_id,
 )
 
 
@@ -116,6 +129,13 @@ class PlanningInstanceExtractor:
         value = self._normalize_datetime(value)
         return int((value - self.origin).total_seconds() // 60)
 
+    def _database_datetime(self, value):
+        """Return a datetime in the form accepted by the configured ORM."""
+
+        if value is None or settings.USE_TZ:
+            return value
+        return value.astimezone(self.zone).replace(tzinfo=None)
+
     def _source_filter(self, queryset):
         return queryset.filter(source=self.source) if self.source else queryset
 
@@ -154,6 +174,7 @@ class PlanningInstanceExtractor:
 
         groups = self._group_orders(orders)
         recipes, recipe_objects = self._extract_recipes(orders)
+        furnace_programs = self._extract_furnace_programs()
         task_recipes = self._select_task_recipes(orders, recipe_objects)
         resources_by_operation = self._resource_candidates(orders)
         assigned_resources = self._assigned_resources(orders)
@@ -173,6 +194,26 @@ class PlanningInstanceExtractor:
             steps, resources_by_operation, assigned_resources
         )
         frozen_furnace_loads = self._extract_frozen_furnace_loads(steps)
+        frozen_furnace_transitions = self._extract_frozen_furnace_transitions(
+            frozen_furnace_loads
+        )
+        predecessors = {
+            item.successor_load_id: item.predecessor_load_id
+            for item in frozen_furnace_transitions
+        }
+        successors = {
+            item.predecessor_load_id: item.successor_load_id
+            for item in frozen_furnace_transitions
+            if item.predecessor_load_id
+        }
+        frozen_furnace_loads = tuple(
+            replace(
+                item,
+                predecessor_load_id=predecessors.get(item.id),
+                successor_load_id=successors.get(item.id),
+            )
+            for item in frozen_furnace_loads
+        )
 
         window = PlanningWindow(
             origin=self.origin.isoformat(),
@@ -188,10 +229,14 @@ class PlanningInstanceExtractor:
             equipment=tuple(sorted(equipment, key=lambda item: item.id)),
             capabilities=tuple(sorted(capabilities, key=lambda item: item.id)),
             recipes=tuple(sorted(recipes, key=lambda item: item.id)),
+            furnace_programs=furnace_programs,
+            furnace_state_snapshots=self._extract_furnace_state_snapshots(equipment),
+            furnace_transition_rules=self._extract_furnace_transition_rules(),
             compatibility_rules=self._extract_compatibility_rules(),
             setup_rules=self._extract_setup_rules(),
             materials=tuple(sorted(materials, key=lambda item: item.id)),
             frozen_furnace_loads=frozen_furnace_loads,
+            frozen_furnace_transitions=frozen_furnace_transitions,
         )
 
     @staticmethod
@@ -219,7 +264,7 @@ class PlanningInstanceExtractor:
 
     def _extract_recipes(self, orders):
         queryset = MlccRecipe.objects.using(self.database).select_related(
-            "item", "operation"
+            "item", "operation", "furnace_program"
         )
         queryset = self._source_filter(queryset).order_by(
             "name", "version", "effective_date", "id"
@@ -245,11 +290,36 @@ class PlanningInstanceExtractor:
                     setup_family=parameters.get("setup_family"),
                     parameters=parameters,
                     furnace_program_key=recipe.furnace_program_key,
+                    furnace_program_id=(
+                        stable_id("furnace_program", recipe.furnace_program_id)
+                        if recipe.furnace_program_id
+                        else None
+                    ),
                     compatibility_group=recipe.compatibility_group,
                 )
             )
             objects[recipe.pk] = (recipe, identifier)
         return recipes, objects
+
+    def _extract_furnace_programs(self):
+        queryset = self._source_filter(
+            MlccFurnaceProgram.objects.using(self.database).all()
+        ).order_by("process_stage", "program_key", "version", "id")
+        return tuple(
+            FurnaceProgram(
+                id=stable_id("furnace_program", row.id),
+                program_key=row.program_key,
+                version=row.version,
+                stage=row.process_stage,
+                atmosphere_key=row.atmosphere_key,
+                required_pre_state_key=row.required_pre_state_key,
+                resulting_post_state_key=row.resulting_post_state_key,
+                effective_date=row.effective_date.isoformat(),
+                expiry_date=row.expiry_date.isoformat() if row.expiry_date else None,
+                active=row.active,
+            )
+            for row in queryset
+        )
 
     def _select_task_recipes(self, orders, recipe_objects):
         result = {}
@@ -771,7 +841,7 @@ class PlanningInstanceExtractor:
         resources = (
             Resource.objects.using(self.database)
             .filter(name__in=names)
-            .select_related("available")
+            .select_related("available", "owner")
             .order_by("name")
         )
         return [
@@ -784,6 +854,9 @@ class PlanningInstanceExtractor:
                     else resource.maximum
                 ),
                 load_unit=getattr(resource, "mlcc_load_unit", None),
+                equipment_group=(
+                    getattr(resource, "mlcc_equipment_group", None) or resource.owner_id
+                ),
                 **self._calendar_intervals(resource),
             )
             for resource in resources
@@ -795,7 +868,7 @@ class PlanningInstanceExtractor:
             MlccFurnaceLoad.objects.using(self.database)
             .filter(Q(frozen=True) | Q(status__in=("ready", "running", "complete")))
             .exclude(status__in=("draft", "proposed", "cancelled"))
-            .select_related("resource", "recipe")
+            .select_related("resource", "recipe", "furnace_program")
             .prefetch_related("items")
             .order_by("reference")
         )
@@ -831,9 +904,184 @@ class PlanningInstanceExtractor:
                     load_unit=load.load_unit,
                     member_task_ids=member_task_ids,
                     status=load.status,
+                    furnace_program_id=(
+                        stable_id("furnace_program", load.furnace_program_id)
+                        if load.furnace_program_id
+                        else None
+                    ),
                 )
             )
         return tuple(result)
+
+    def _extract_furnace_state_snapshots(self, equipment):
+        resource_names = sorted(item.resource_id for item in equipment)
+        queryset = (
+            MlccFurnaceStateSnapshot.objects.using(self.database)
+            .filter(
+                resource_id__in=resource_names,
+                observed_at__lte=self._database_datetime(self.origin),
+            )
+            .select_related("resource", "current_program")
+            .order_by("resource_id", "-observed_at", "-id")
+        )
+        queryset = self._source_filter(queryset)
+        result = []
+        seen = set()
+        for row in queryset:
+            if row.resource_id in seen:
+                continue
+            seen.add(row.resource_id)
+            result.append(
+                FurnaceStateSnapshot(
+                    id=stable_furnace_state_id(
+                        stable_id("resource", row.resource_id),
+                        row.observed_at.isoformat(),
+                    ),
+                    resource_id=stable_id("resource", row.resource_id),
+                    observed_minute=self._minute(row.observed_at),
+                    state_key=row.state_key,
+                    current_program_id=(
+                        stable_id("furnace_program", row.current_program_id)
+                        if row.current_program_id
+                        else None
+                    ),
+                    available_minute=self._minute(row.available_at),
+                    source=row.source,
+                )
+            )
+        return tuple(sorted(result, key=lambda item: item.id))
+
+    def _extract_furnace_transition_rules(self):
+        queryset = (
+            MlccFurnaceTransitionRule.objects.using(self.database)
+            .select_related("resource", "to_program")
+            .order_by(
+                "process_stage",
+                "resource_id",
+                "equipment_group",
+                "from_state_key",
+                "to_program_id",
+                "priority",
+                "id",
+            )
+        )
+        queryset = self._source_filter(queryset)
+        result = []
+        for row in queryset:
+            resource_id = (
+                stable_id("resource", row.resource_id) if row.resource_id else None
+            )
+            to_program_id = stable_id("furnace_program", row.to_program_id)
+            duration_minutes = timedelta_minutes(row.duration) or 0
+            effective_date = row.effective_date.isoformat()
+            expiry_date = row.expiry_date.isoformat() if row.expiry_date else None
+            result.append(
+                FurnaceTransitionRule(
+                    id=stable_transition_rule_id(
+                        resource_id,
+                        row.equipment_group,
+                        row.process_stage,
+                        row.from_state_key,
+                        to_program_id,
+                        row.transition_type,
+                        duration_minutes,
+                        row.setup_cost,
+                        row.allowed,
+                        row.enabled,
+                        row.priority,
+                        effective_date,
+                        expiry_date,
+                    ),
+                    resource_id=(resource_id),
+                    equipment_group=row.equipment_group,
+                    stage=row.process_stage,
+                    from_state_key=row.from_state_key,
+                    to_program_id=to_program_id,
+                    transition_type=row.transition_type,
+                    duration_minutes=duration_minutes,
+                    setup_cost=row.setup_cost,
+                    allowed=row.allowed,
+                    enabled=row.enabled,
+                    priority=row.priority,
+                    effective_date=effective_date,
+                    expiry_date=expiry_date,
+                    scope_level=row.scope_level,
+                )
+            )
+        return tuple(result)
+
+    def _extract_frozen_furnace_transitions(self, frozen_loads):
+        load_references = {item.id.split(":", 1)[-1] for item in frozen_loads}
+        if not load_references:
+            return ()
+        queryset = (
+            MlccFurnaceTransition.objects.using(self.database)
+            .filter(
+                successor_load__reference__in=load_references,
+                run_id=F("successor_load__run_id"),
+            )
+            .select_related(
+                "resource",
+                "predecessor_load",
+                "successor_load",
+                "transition_rule",
+            )
+            .order_by("resource_id", "planned_start", "id")
+        )
+        queryset = self._source_filter(queryset)
+        return tuple(
+            FrozenFurnaceTransition(
+                id=stable_furnace_transition_id(
+                    stable_id("resource", row.resource_id),
+                    (
+                        stable_id("furnace_load", row.predecessor_load.reference)
+                        if row.predecessor_load_id
+                        else None
+                    ),
+                    stable_id("furnace_load", row.successor_load.reference),
+                ),
+                resource_id=stable_id("resource", row.resource_id),
+                predecessor_load_id=(
+                    stable_id("furnace_load", row.predecessor_load.reference)
+                    if row.predecessor_load_id
+                    else None
+                ),
+                successor_load_id=stable_id(
+                    "furnace_load", row.successor_load.reference
+                ),
+                transition_rule_id=stable_transition_rule_id(
+                    (
+                        stable_id("resource", row.transition_rule.resource_id)
+                        if row.transition_rule.resource_id
+                        else None
+                    ),
+                    row.transition_rule.equipment_group,
+                    row.transition_rule.process_stage,
+                    row.transition_rule.from_state_key,
+                    stable_id(
+                        "furnace_program",
+                        row.transition_rule.to_program_id,
+                    ),
+                    row.transition_rule.transition_type,
+                    timedelta_minutes(row.transition_rule.duration) or 0,
+                    row.transition_rule.setup_cost,
+                    row.transition_rule.allowed,
+                    row.transition_rule.enabled,
+                    row.transition_rule.priority,
+                    row.transition_rule.effective_date.isoformat(),
+                    (
+                        row.transition_rule.expiry_date.isoformat()
+                        if row.transition_rule.expiry_date
+                        else None
+                    ),
+                ),
+                transition_type=row.transition_type,
+                start_minute=self._minute(row.planned_start),
+                end_minute=self._minute(row.planned_end),
+                status=row.status,
+            )
+            for row in queryset
+        )
 
     def _calendar_intervals(self, resource):
         horizon = self.horizon_days * 24 * 60

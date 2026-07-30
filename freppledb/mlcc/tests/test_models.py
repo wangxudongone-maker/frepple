@@ -11,6 +11,10 @@ from freppledb.mlcc.models import (
     MlccEquipmentCapability,
     MlccFurnaceLoad,
     MlccFurnaceLoadItem,
+    MlccFurnaceProgram,
+    MlccFurnaceStateSnapshot,
+    MlccFurnaceTransition,
+    MlccFurnaceTransitionRule,
     MlccLoadUnitConversion,
     MlccQualityHold,
     MlccRecipe,
@@ -22,6 +26,18 @@ from .base import MlccTestDataMixin
 
 
 class MlccValidationTest(MlccTestDataMixin, TestCase):
+    def furnace_program(self, identifier="program:test", version="V1"):
+        return MlccFurnaceProgram.objects.create(
+            id=identifier,
+            program_key=identifier.upper(),
+            version=version,
+            process_stage="sintering",
+            atmosphere_key="AIR",
+            required_pre_state_key="idle",
+            resulting_post_state_key=f"done:{version}",
+            effective_date=date(2025, 1, 1),
+        )
+
     def test_recipe_requires_version_and_effective_date(self):
         with self.assertRaises(ValidationError):
             MlccRecipe(
@@ -182,3 +198,111 @@ class MlccValidationTest(MlccTestDataMixin, TestCase):
             status="proposed",
         )
         self.assertEqual(load.run_id, run.pk)
+
+    def test_recipe_program_mapping_must_use_same_stage_and_key(self):
+        program = self.furnace_program()
+        with self.assertRaises(ValidationError):
+            MlccRecipe.objects.create(
+                name="MISMATCHED-PROGRAM",
+                version="V1",
+                effective_date=date(2025, 1, 1),
+                process_stage="debinding",
+                furnace_program=program,
+                furnace_program_key=program.program_key,
+            )
+        with self.assertRaises(ValidationError):
+            MlccRecipe.objects.create(
+                name="MISMATCHED-KEY",
+                version="V1",
+                effective_date=date(2025, 1, 1),
+                process_stage="sintering",
+                furnace_program=program,
+                furnace_program_key="OTHER",
+            )
+
+    def test_state_and_transition_rules_are_explicit_and_unambiguous(self):
+        program = self.furnace_program()
+        now = timezone.now()
+        with self.assertRaises(ValidationError):
+            MlccFurnaceStateSnapshot.objects.create(
+                resource=self.resource,
+                observed_at=now,
+                state_key="idle",
+                available_at=now - timedelta(minutes=1),
+            )
+        MlccFurnaceTransitionRule.objects.create(
+            resource=self.resource,
+            process_stage="sintering",
+            from_state_key="idle",
+            to_program=program,
+            transition_type="none",
+            duration=timedelta(0),
+            setup_cost=Decimal("0"),
+            effective_date=date(2025, 1, 1),
+        )
+        lower_precedence = MlccFurnaceTransitionRule.objects.create(
+            resource=self.resource,
+            process_stage="sintering",
+            from_state_key="idle",
+            to_program=program,
+            transition_type="cleaning",
+            duration=timedelta(minutes=5),
+            setup_cost=Decimal("1"),
+            priority=10,
+            effective_date=date(2025, 1, 1),
+        )
+        self.assertEqual(lower_precedence.priority, 10)
+        with self.assertRaises(ValidationError):
+            MlccFurnaceTransitionRule.objects.create(
+                resource=self.resource,
+                process_stage="sintering",
+                from_state_key="idle",
+                to_program=program,
+                transition_type="cleaning",
+                duration=timedelta(minutes=1),
+                setup_cost=Decimal("1"),
+                effective_date=date(2025, 1, 1),
+            )
+
+    def test_persisted_transition_status_is_preview_only(self):
+        program = self.furnace_program()
+        rule = MlccFurnaceTransitionRule.objects.create(
+            resource=self.resource,
+            process_stage="sintering",
+            from_state_key="idle",
+            to_program=program,
+            transition_type="none",
+            duration=timedelta(0),
+            effective_date=date(2025, 1, 1),
+        )
+        now = timezone.now()
+        run = MlccScheduleRun.objects.create(
+            name="RUN-TRANSITION",
+            horizon_start=now,
+            horizon_end=now + timedelta(days=1),
+        )
+        load = MlccFurnaceLoad.objects.create(
+            reference="LOAD-TRANSITION",
+            run=run,
+            resource=self.resource,
+            furnace_program=program,
+            operation_type="sintering",
+            furnace_program_key=program.program_key,
+            planned_start=now + timedelta(hours=1),
+            planned_end=now + timedelta(hours=2),
+            capacity=Decimal("5"),
+            loaded_quantity=Decimal("1"),
+            load_unit="tray",
+            status="proposed",
+        )
+        with self.assertRaises(ValidationError):
+            MlccFurnaceTransition.objects.create(
+                run=run,
+                resource=self.resource,
+                successor_load=load,
+                transition_rule=rule,
+                transition_type="none",
+                planned_start=load.planned_start,
+                planned_end=load.planned_start,
+                status="complete",
+            )

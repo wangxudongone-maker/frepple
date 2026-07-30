@@ -10,6 +10,10 @@ from .models import (
     MlccEquipmentCapability,
     MlccFurnaceLoad,
     MlccFurnaceLoadItem,
+    MlccFurnaceProgram,
+    MlccFurnaceStateSnapshot,
+    MlccFurnaceTransition,
+    MlccFurnaceTransitionRule,
     MlccLoadUnitConversion,
     MlccQualityHold,
     MlccPrecheckIssue,
@@ -71,7 +75,7 @@ class MlccModelAdmin(MultiDBModelAdmin):
 
 @admin.register(MlccRecipe, site=data_site)
 class MlccRecipeAdmin(MlccModelAdmin):
-    raw_id_fields = ("item", "operation")
+    raw_id_fields = ("item", "operation", "furnace_program")
     fields = (
         "name",
         "version",
@@ -81,9 +85,61 @@ class MlccRecipeAdmin(MlccModelAdmin):
         "item",
         "operation",
         "active",
+        "furnace_program",
         "furnace_program_key",
         "compatibility_group",
         "parameters",
+        "source",
+    )
+
+
+@admin.register(MlccFurnaceProgram, site=data_site)
+class MlccFurnaceProgramAdmin(MlccModelAdmin):
+    fields = (
+        "id",
+        "program_key",
+        "version",
+        "process_stage",
+        "atmosphere_key",
+        "required_pre_state_key",
+        "resulting_post_state_key",
+        "effective_date",
+        "expiry_date",
+        "active",
+        "source",
+    )
+
+
+@admin.register(MlccFurnaceStateSnapshot, site=data_site)
+class MlccFurnaceStateSnapshotAdmin(MlccModelAdmin):
+    raw_id_fields = ("resource", "current_program")
+    fields = (
+        "resource",
+        "observed_at",
+        "state_key",
+        "current_program",
+        "available_at",
+        "source",
+    )
+
+
+@admin.register(MlccFurnaceTransitionRule, site=data_site)
+class MlccFurnaceTransitionRuleAdmin(MlccModelAdmin):
+    raw_id_fields = ("resource", "to_program")
+    fields = (
+        "resource",
+        "equipment_group",
+        "process_stage",
+        "from_state_key",
+        "to_program",
+        "transition_type",
+        "duration",
+        "setup_cost",
+        "allowed",
+        "enabled",
+        "priority",
+        "effective_date",
+        "expiry_date",
         "source",
     )
 
@@ -153,12 +209,13 @@ class MlccBatchGenealogyAdmin(MlccModelAdmin):
 
 @admin.register(MlccFurnaceLoad, site=data_site)
 class MlccFurnaceLoadAdmin(MlccModelAdmin):
-    raw_id_fields = ("run", "resource", "recipe")
+    raw_id_fields = ("run", "resource", "recipe", "furnace_program")
     fields = (
         "reference",
         "run",
         "resource",
         "recipe",
+        "furnace_program",
         "operation_type",
         "furnace_program_key",
         "planned_start",
@@ -168,6 +225,30 @@ class MlccFurnaceLoadAdmin(MlccModelAdmin):
         "loaded_quantity",
         "load_unit",
         "frozen",
+        "details",
+        "source",
+    )
+
+
+@admin.register(MlccFurnaceTransition, site=data_site)
+class MlccFurnaceTransitionAdmin(MlccModelAdmin):
+    raw_id_fields = (
+        "run",
+        "resource",
+        "predecessor_load",
+        "successor_load",
+        "transition_rule",
+    )
+    fields = (
+        "run",
+        "resource",
+        "predecessor_load",
+        "successor_load",
+        "transition_rule",
+        "transition_type",
+        "planned_start",
+        "planned_end",
+        "status",
         "details",
         "source",
     )

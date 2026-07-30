@@ -14,6 +14,7 @@ from .constraints import (
     material_ready_minute,
     schedulable_steps,
 )
+from .transition_rules import resolve_transition_rule
 
 
 @dataclass(frozen=True)
@@ -360,6 +361,310 @@ class SchedulingSolutionValidator:
                     order.id,
                     "Order completion or tardiness is inconsistent.",
                 )
+
+        if (
+            solution.solution_mode == "phase3c_transition"
+            or solution.furnace_transitions
+        ):
+            programs = {item.id: item for item in instance.furnace_programs}
+            states = {
+                item.resource_id: item for item in instance.furnace_state_snapshots
+            }
+            rules = {item.id: item for item in instance.furnace_transition_rules}
+            transitions_by_successor = defaultdict(list)
+            transitions_by_predecessor = defaultdict(list)
+            for transition in solution.furnace_transitions:
+                transitions_by_successor[transition.successor_load_id].append(
+                    transition
+                )
+                if transition.predecessor_load_id:
+                    transitions_by_predecessor[transition.predecessor_load_id].append(
+                        transition
+                    )
+
+            for load_id, load in sorted(loads.items()):
+                member_steps = [
+                    steps[item] for item in load.member_task_ids if item in steps
+                ]
+                member_recipe_ids = tuple(
+                    sorted({item.recipe_id for item in member_steps})
+                )
+                member_program_ids = {
+                    recipes[item].furnace_program_id
+                    for item in member_recipe_ids
+                    if item in recipes
+                }
+                expected_program_id = (
+                    next(iter(member_program_ids))
+                    if len(member_program_ids) == 1
+                    else None
+                )
+                expected_recipe_id = (
+                    member_recipe_ids[0] if len(member_recipe_ids) == 1 else None
+                )
+                program = programs.get(load.furnace_program_id)
+                if (
+                    not member_steps
+                    or expected_program_id is None
+                    or load.furnace_program_id != expected_program_id
+                    or program is None
+                    or load.furnace_program_key != program.program_key
+                    or load.furnace_program_version != program.version
+                    or tuple(sorted(load.member_recipe_ids)) != member_recipe_ids
+                    or load.recipe_id != expected_recipe_id
+                    or (expected_recipe_id is None and load.recipe_version is not None)
+                ):
+                    add(
+                        "MLCC-SV032",
+                        load_id,
+                        "Furnace load recipe/program identity is inconsistent.",
+                    )
+
+                incoming = transitions_by_successor.get(load_id, ())
+                if len(incoming) != 1:
+                    add(
+                        "MLCC-SV033",
+                        load_id,
+                        "Furnace load must have exactly one incoming transition.",
+                    )
+                outgoing = transitions_by_predecessor.get(load_id, ())
+                if len(outgoing) > 1:
+                    add(
+                        "MLCC-SV034",
+                        load_id,
+                        "Furnace load has more than one successor.",
+                    )
+                expected_predecessor = (
+                    incoming[0].predecessor_load_id if len(incoming) == 1 else None
+                )
+                expected_successor = (
+                    outgoing[0].successor_load_id if len(outgoing) == 1 else None
+                )
+                if (
+                    load.predecessor_load_id != expected_predecessor
+                    or load.successor_load_id != expected_successor
+                    or (
+                        len(incoming) == 1
+                        and load.setup_before_minutes != incoming[0].duration_minutes
+                    )
+                ):
+                    add(
+                        "MLCC-SV035",
+                        load_id,
+                        "Furnace load sequence summary differs from transitions.",
+                    )
+
+            transition_ids = set()
+            frozen_transitions = {
+                item.id: item for item in instance.frozen_furnace_transitions
+            }
+            for transition in solution.furnace_transitions:
+                if transition.transition_id in transition_ids:
+                    add(
+                        "MLCC-SV036",
+                        transition.transition_id,
+                        "Furnace transition identifier is duplicated.",
+                    )
+                transition_ids.add(transition.transition_id)
+                successor = loads.get(transition.successor_load_id)
+                predecessor = (
+                    loads.get(transition.predecessor_load_id)
+                    if transition.predecessor_load_id
+                    else None
+                )
+                rule = rules.get(transition.rule_id)
+                state = states.get(transition.equipment_id)
+                target_program = (
+                    programs.get(successor.furnace_program_id) if successor else None
+                )
+                predecessor_program = (
+                    programs.get(predecessor.furnace_program_id)
+                    if predecessor
+                    else None
+                )
+                from_state = (
+                    predecessor_program.resulting_post_state_key
+                    if predecessor_program
+                    else (state.state_key if state else None)
+                )
+                ready_minute = (
+                    predecessor.end_minute
+                    if predecessor
+                    else (state.available_minute if state else 0)
+                )
+                if (
+                    successor is None
+                    or successor.equipment_id != transition.equipment_id
+                    or (
+                        predecessor is not None
+                        and predecessor.equipment_id != transition.equipment_id
+                    )
+                    or transition.end_minute < transition.start_minute
+                    or transition.duration_minutes
+                    != transition.end_minute - transition.start_minute
+                    or transition.start_minute < ready_minute
+                    or transition.end_minute > successor.start_minute
+                    or rule is None
+                    or target_program is None
+                    or from_state is None
+                    or transition.from_state_key != from_state
+                    or transition.to_program_key != target_program.program_key
+                    or rule.transition_type != transition.transition_type
+                    or rule.duration_minutes != transition.duration_minutes
+                    or not rule.allowed
+                    or not rule.enabled
+                    or transition.status != "proposed"
+                ):
+                    add(
+                        "MLCC-SV037",
+                        transition.transition_id,
+                        "Furnace transition fields, direction, state or duration are invalid.",
+                    )
+                elif successor:
+                    resolution = resolve_transition_rule(
+                        instance,
+                        transition.equipment_id,
+                        successor.operation_type,
+                        from_state,
+                        successor.furnace_program_id,
+                    )
+                    if (
+                        resolution.conflict
+                        or not resolution.allowed
+                        or resolution.rule.id != transition.rule_id
+                        or resolution.scope_level != transition.rule_scope_level
+                    ):
+                        add(
+                            "MLCC-SV038",
+                            transition.transition_id,
+                            "Furnace transition rule does not resolve uniquely.",
+                        )
+                resource = equipment.get(transition.equipment_id)
+                if resource and not any(
+                    start <= transition.start_minute and transition.end_minute <= end
+                    for start, end in available_segments(
+                        resource, instance.window.horizon_minutes
+                    )
+                ):
+                    add(
+                        "MLCC-SV039",
+                        transition.transition_id,
+                        "Furnace transition overlaps unavailable calendar time.",
+                    )
+
+                original = frozen_transitions.get(transition.transition_id)
+                if original and (
+                    not transition.frozen
+                    or transition.equipment_id != original.resource_id
+                    or transition.predecessor_load_id != original.predecessor_load_id
+                    or transition.successor_load_id != original.successor_load_id
+                    or transition.rule_id != original.transition_rule_id
+                    or transition.transition_type != original.transition_type
+                    or transition.start_minute != original.start_minute
+                    or transition.end_minute != original.end_minute
+                    or transition.status != original.status
+                ):
+                    add(
+                        "MLCC-SV040",
+                        transition.transition_id,
+                        "Frozen furnace transition was changed.",
+                    )
+
+            for transition_id in sorted(set(frozen_transitions) - transition_ids):
+                add(
+                    "MLCC-SV041",
+                    transition_id,
+                    "Frozen furnace transition is missing.",
+                )
+
+            for resource_id in sorted({item.equipment_id for item in loads.values()}):
+                resource_loads = {
+                    item.load_id: item
+                    for item in loads.values()
+                    if item.equipment_id == resource_id
+                }
+                initial = [
+                    item
+                    for item in solution.furnace_transitions
+                    if item.equipment_id == resource_id
+                    and item.predecessor_load_id is None
+                ]
+                if resource_loads and len(initial) != 1:
+                    add(
+                        "MLCC-SV042",
+                        resource_id,
+                        "Furnace sequence must have exactly one initial-state arc.",
+                    )
+                visited = set()
+                current = initial[0].successor_load_id if len(initial) == 1 else None
+                while current:
+                    if current in visited:
+                        add(
+                            "MLCC-SV043",
+                            resource_id,
+                            "Furnace load sequence contains a cycle.",
+                        )
+                        break
+                    if current not in resource_loads:
+                        add(
+                            "MLCC-SV044",
+                            resource_id,
+                            "Furnace sequence crosses equipment.",
+                        )
+                        break
+                    visited.add(current)
+                    outgoing = transitions_by_predecessor.get(current, ())
+                    current = (
+                        outgoing[0].successor_load_id if len(outgoing) == 1 else None
+                    )
+                if visited != set(resource_loads):
+                    add(
+                        "MLCC-SV045",
+                        resource_id,
+                        "Furnace sequence does not cover every load exactly once.",
+                    )
+
+                activities = []
+                for load in resource_loads.values():
+                    activities.append(
+                        (
+                            load.start_minute,
+                            load.end_minute,
+                            f"load:{load.load_id}",
+                        )
+                    )
+                for transition in solution.furnace_transitions:
+                    if (
+                        transition.equipment_id == resource_id
+                        and transition.duration_minutes > 0
+                    ):
+                        activities.append(
+                            (
+                                transition.start_minute,
+                                transition.end_minute,
+                                f"transition:{transition.transition_id}",
+                            )
+                        )
+                for assignment in assignments.values():
+                    if (
+                        assignment.resource_id == resource_id
+                        and assignment.stage not in FURNACE_STAGES
+                    ):
+                        activities.append(
+                            (
+                                assignment.start_minute,
+                                assignment.end_minute,
+                                f"task:{assignment.task_id}",
+                            )
+                        )
+                activities.sort()
+                for previous, current in zip(activities, activities[1:]):
+                    if previous[1] > current[0]:
+                        add(
+                            "MLCC-SV046",
+                            resource_id,
+                            f"Furnace activities {previous[2]} and {current[2]} overlap.",
+                        )
 
         unique = {
             (item.code, item.object_id, item.message): item for item in violations

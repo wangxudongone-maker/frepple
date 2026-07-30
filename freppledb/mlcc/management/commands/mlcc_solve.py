@@ -3,7 +3,9 @@ from pathlib import Path
 from django.core.management.base import BaseCommand, CommandError
 from django.db import DEFAULT_DB_ALIAS
 
-from freppledb.mlcc.solver.cpsat import PrecheckBlockedError, solve
+from freppledb.mlcc.solver.cpsat import solve as solve_phase3b
+from freppledb.mlcc.solver.phase3c import PrecheckBlockedError
+from freppledb.mlcc.solver.phase3c import solve as solve_phase3c
 from freppledb.mlcc.solver.serializer import load_planning_instance
 from freppledb.mlcc.solver.service import build_and_validate
 from freppledb.mlcc.solver.solution import (
@@ -15,7 +17,7 @@ from freppledb.mlcc.solver.solve_service import persist_preview_solution
 
 
 class Command(BaseCommand):
-    help = "Create an MLCC CP-SAT furnace-batching schedule preview"
+    help = "Create an MLCC CP-SAT furnace schedule preview"
 
     def add_arguments(self, parser):
         parser.add_argument("--database", default=DEFAULT_DB_ALIAS)
@@ -32,6 +34,12 @@ class Command(BaseCommand):
         parser.add_argument("--log-search-progress", action="store_true")
         parser.add_argument("--persist-preview", action="store_true")
         parser.add_argument("--compact", action="store_true")
+        parser.add_argument(
+            "--solver-phase",
+            choices=("phase3b", "phase3c"),
+            default="phase3c",
+            help="Use phase3c sequence transitions (default) or phase3b batching.",
+        )
 
     def handle(self, *args, **options):
         if options["max_time_seconds"] <= 0:
@@ -64,7 +72,11 @@ class Command(BaseCommand):
             log_search_progress=options["log_search_progress"],
         )
         try:
-            solution = solve(instance, parameters)
+            solution = (
+                solve_phase3c(instance, parameters)
+                if options["solver_phase"] == "phase3c"
+                else solve_phase3b(instance, parameters)
+            )
         except PrecheckBlockedError as exc:
             raise CommandError(str(exc)) from exc
 
@@ -99,6 +111,7 @@ class Command(BaseCommand):
                 f"MLCC CP-SAT preview written to {output}; "
                 f"status={solution.status}, tasks={solution.scheduled_task_count}, "
                 f"furnace_loads={len(solution.furnace_loads)}, "
+                f"furnace_transitions={len(solution.furnace_transitions)}, "
                 f"load_delta={solution.metric_deltas.get('furnace_load_count', 0)}, "
                 f"violations={validation.violation_count}, "
                 f"duration={solution.wall_time_seconds:.3f}s"

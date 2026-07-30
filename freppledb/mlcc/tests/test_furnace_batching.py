@@ -9,7 +9,11 @@ from freppledb.mlcc.solver.schema import (
     CompatibilityRule,
     EquipmentCapability,
     FrozenFurnaceLoad,
+    FrozenFurnaceTransition,
+    FurnaceProgram,
     FurnaceLoadRequirement,
+    FurnaceStateSnapshot,
+    FurnaceTransitionRule,
     Recipe,
 )
 from freppledb.mlcc.solver.solution import SolverParameters
@@ -176,7 +180,56 @@ class FurnaceBatchingGoldTest(SimpleTestCase):
             active=True,
             setup_family="sintering-a",
             furnace_program_key="SINTERING-V2",
+            furnace_program_id="furnace_program:sintering-v2",
             compatibility_group="CERAMIC-A",
+        )
+        second_program = FurnaceProgram(
+            id="furnace_program:sintering-v2",
+            program_key="SINTERING-V2",
+            version="V2",
+            stage="sintering",
+            atmosphere_key="AIR-V2",
+            required_pre_state_key="sintering-done",
+            resulting_post_state_key="sintering-v2-done",
+            effective_date="2025-01-01",
+            expiry_date=None,
+            active=True,
+        )
+        second_rules = (
+            FurnaceTransitionRule(
+                id="transition_rule:sintering-v1-v2",
+                resource_id="resource:sintering",
+                equipment_group=None,
+                stage="sintering",
+                from_state_key="sintering-done",
+                to_program_id=second_program.id,
+                transition_type="cleaning",
+                duration_minutes=10,
+                setup_cost=Decimal("10"),
+                allowed=True,
+                enabled=True,
+                priority=0,
+                effective_date="2025-01-01",
+                expiry_date=None,
+                scope_level="resource",
+            ),
+            FurnaceTransitionRule(
+                id="transition_rule:sintering-v2-v1",
+                resource_id="resource:sintering",
+                equipment_group=None,
+                stage="sintering",
+                from_state_key="sintering-v2-done",
+                to_program_id="furnace_program:sintering-v1",
+                transition_type="cleaning",
+                duration_minutes=10,
+                setup_cost=Decimal("10"),
+                allowed=True,
+                enabled=True,
+                priority=0,
+                effective_date="2025-01-01",
+                expiry_date=None,
+                scope_level="resource",
+            ),
         )
         steps = tuple(
             (
@@ -201,6 +254,10 @@ class FurnaceBatchingGoldTest(SimpleTestCase):
                 instance,
                 steps=steps,
                 recipes=instance.recipes + (second_recipe,),
+                furnace_programs=instance.furnace_programs + (second_program,),
+                furnace_transition_rules=(
+                    instance.furnace_transition_rules + second_rules
+                ),
                 capabilities=instance.capabilities + (capability,),
             )
         )
@@ -249,12 +306,36 @@ class FurnaceBatchingGoldTest(SimpleTestCase):
             id="capability:sintering-large",
             resource_id=large.id,
         )
+        large_state = replace(
+            next(
+                item
+                for item in instance.furnace_state_snapshots
+                if item.resource_id == small.id
+            ),
+            id="furnace_state:sintering-large",
+            resource_id=large.id,
+        )
+        large_rules = tuple(
+            replace(
+                item,
+                id=f"{item.id}:large",
+                resource_id=large.id,
+            )
+            for item in instance.furnace_transition_rules
+            if item.resource_id == small.id
+        )
         solution = self.solve_valid(
             replace(
                 instance,
                 equipment=equipment,
                 steps=steps,
                 capabilities=instance.capabilities + (capability,),
+                furnace_state_snapshots=(
+                    instance.furnace_state_snapshots + (large_state,)
+                ),
+                furnace_transition_rules=(
+                    instance.furnace_transition_rules + large_rules
+                ),
             )
         )
         self.assertTrue(
@@ -285,6 +366,18 @@ class FurnaceBatchingGoldTest(SimpleTestCase):
             load_unit="tray",
             member_task_ids=(step.id,),
             status="running",
+            furnace_program_id="furnace_program:sintering-v1",
+        )
+        frozen_transition = FrozenFurnaceTransition(
+            id="furnace_transition:FROZEN-1",
+            resource_id="resource:sintering",
+            predecessor_load_id=None,
+            successor_load_id=frozen.id,
+            transition_rule_id="transition_rule:sintering-initial",
+            transition_type="none",
+            start_minute=frozen.start_minute,
+            end_minute=frozen.start_minute,
+            status="proposed",
         )
         frozen_instance = replace(
             instance,
@@ -292,6 +385,7 @@ class FurnaceBatchingGoldTest(SimpleTestCase):
                 frozen_step if item.id == step.id else item for item in instance.steps
             ),
             frozen_furnace_loads=(frozen,),
+            frozen_furnace_transitions=(frozen_transition,),
         )
         solution = self.solve_valid(frozen_instance)
         load = next(
@@ -349,6 +443,18 @@ class FurnaceBatchingGoldTest(SimpleTestCase):
             load_unit="tray",
             member_task_ids=tuple(item.id for item in members),
             status="running",
+            furnace_program_id="furnace_program:sintering-v1",
+        )
+        frozen_transition = FrozenFurnaceTransition(
+            id="furnace_transition:FROZEN-MULTI",
+            resource_id="resource:sintering",
+            predecessor_load_id=None,
+            successor_load_id=frozen.id,
+            transition_rule_id="transition_rule:sintering-initial",
+            transition_type="none",
+            start_minute=frozen.start_minute,
+            end_minute=frozen.start_minute,
+            status="proposed",
         )
         solution = self.solve_valid(
             replace(
@@ -357,6 +463,7 @@ class FurnaceBatchingGoldTest(SimpleTestCase):
                     frozen_members.get(item.id, item) for item in instance.steps
                 ),
                 frozen_furnace_loads=(frozen,),
+                frozen_furnace_transitions=(frozen_transition,),
             )
         )
         load = next(

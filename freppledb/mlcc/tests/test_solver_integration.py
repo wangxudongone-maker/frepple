@@ -87,7 +87,7 @@ class ValidSolverDemoIntegrationTest(TestCase):
             )
             self.assertTrue(output.exists())
             self.assertIn(
-                '"schema_version": "mlcc-planning-instance/v1"',
+                '"schema_version": "mlcc-planning-instance/v2"',
                 output.read_text(encoding="utf-8"),
             )
 
@@ -167,7 +167,7 @@ class InvalidSolverDemoIntegrationTest(TestCase):
             source=INVALID_SOURCE,
         )
         actual = {item.code for item in report.issues}
-        expected = {f"MLCC-P{number:03d}" for number in range(1, 21)}
+        expected = {f"MLCC-P{number:03d}" for number in range(1, 26)}
         self.assertEqual(actual, expected)
         self.assertGreater(report.blocker_count, 0)
         self.assertFalse(report.can_start_solver)

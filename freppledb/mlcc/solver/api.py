@@ -6,7 +6,9 @@ from rest_framework.views import APIView
 from freppledb.common.api.views import frepplePermissionClass
 from freppledb.mlcc.models import MlccPrecheckRun, MlccScheduleRun
 
-from .cpsat import PrecheckBlockedError, solve
+from .cpsat import solve as solve_phase3b
+from .phase3c import PrecheckBlockedError
+from .phase3c import solve as solve_phase3c
 from .serializer import (
     planning_instance_fingerprint,
     to_primitive,
@@ -165,6 +167,9 @@ class MlccSolveAPI(APIView):
             workers = int(request.data.get("workers", 1))
             random_seed = int(request.data.get("random_seed", 0))
             persist = _boolean(request.data.get("persist"), default=True)
+            solver_phase = request.data.get("solver_phase", "phase3c")
+            if solver_phase not in ("phase3b", "phase3c"):
+                raise ValueError("solver_phase must be phase3b or phase3c")
             if max_time_seconds <= 0 or workers <= 0:
                 raise ValueError(
                     "max_time_seconds and workers must be greater than zero"
@@ -189,7 +194,11 @@ class MlccSolveAPI(APIView):
             log_search_progress=False,
         )
         try:
-            solution = solve(instance, parameters)
+            solution = (
+                solve_phase3c(instance, parameters)
+                if solver_phase == "phase3c"
+                else solve_phase3b(instance, parameters)
+            )
         except PrecheckBlockedError as exc:
             return Response(
                 {
